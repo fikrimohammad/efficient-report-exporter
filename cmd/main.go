@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	reporthandler "github.com/fikrimohammad/efficient-report-exporter/handler/report"
@@ -42,7 +45,18 @@ func main() {
 	app.Use(logger.New())
 	app.Post("/v1/reports/export", reportHandler.ExportReport)
 
-	log.Fatal(app.Listen(":3000"))
+	go func() {
+		if err := app.Listen(":3000"); err != nil {
+			log.Panic(err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	app.Shutdown()
+	db.Close()
 }
 
 func initDB(cfg *config) (*sqlx.DB, error) {
