@@ -64,5 +64,10 @@ func initDB(cfg *config) (*sqlx.DB, error) {
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
+
 	return db, nil
 }
