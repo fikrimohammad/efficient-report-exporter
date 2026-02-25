@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
@@ -19,35 +20,32 @@ import (
 func (u *useCase) ExportReport(ctx context.Context, params usecase.ExportReportParams) (*usecase.ExportReportResult, error) {
 	rg := reportExporter{
 		reportMySQLRepository: u.reportMySQLRepository,
-		ctx:                   ctx,
-		params:                params,
 	}
 
-	return rg.Export()
+	return rg.Export(ctx, params)
 }
 
 type reportExporter struct {
 	reportMySQLRepository repository.ReportMySQL
-	ctx                   context.Context
-	params                usecase.ExportReportParams
 }
 
-func (rg *reportExporter) Export() (*usecase.ExportReportResult, error) {
-	if err := rg.validateParams(); err != nil {
+func (rg *reportExporter) Export(ctx context.Context, params usecase.ExportReportParams) (*usecase.ExportReportResult, error) {
+	if err := rg.validateParams(params); err != nil {
 		return nil, err
 	}
 
-	reportDataStream, err := rg.asyncFetchReports()
+	errGroup, errGroupCtx := errgroup.WithContext(ctx)
+	reportDataStream, err := rg.asyncFetchReports(errGroupCtx, params)
 	if err != nil {
 		return nil, err
 	}
 
-	reportLineDataStream, err := rg.asyncBuildReportLine(reportDataStream)
+	reportLineDataStream, err := rg.asyncBuildReportLine(errGroupCtx, errGroup, reportDataStream)
 	if err != nil {
 		return nil, err
 	}
 
-	reportCSVFileDataStream, err := rg.asyncBuildReportCSVFile(reportLineDataStream)
+	reportCSVFileDataStream, err := rg.asyncBuildReportCSVFile(errGroupCtx, errGroup, reportLineDataStream)
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +53,9 @@ func (rg *reportExporter) Export() (*usecase.ExportReportResult, error) {
 	result := &usecase.ExportReportResult{
 		FileName: fmt.Sprintf(
 			"%s_%s_%s.csv",
-			rg.params.StartTime.Format(model.ReportNameTimeFormat),
-			rg.params.EndTime.Format(model.ReportNameTimeFormat),
+			strconv.FormatInt(params.ShopID, 10),
+			params.StartTime.Format(model.ReportNameTimeFormat),
+			params.EndTime.Format(model.ReportNameTimeFormat),
 		),
 		File: reportCSVFileDataStream,
 	}
@@ -64,44 +63,60 @@ func (rg *reportExporter) Export() (*usecase.ExportReportResult, error) {
 	return result, nil
 }
 
-func (rg *reportExporter) validateParams() error {
-	if rg.params.ShopID == 0 {
+func (rg *reportExporter) validateParams(params usecase.ExportReportParams) error {
+	if params.ShopID == 0 {
 		return errors.New("shop_id is required")
 	}
 
-	if rg.params.StartTime.IsZero() {
+	if params.StartTime.IsZero() {
 		return errors.New("start_time is required")
 	}
 
-	if rg.params.EndTime.IsZero() {
+	if params.EndTime.IsZero() {
 		return errors.New("end_time is required")
 	}
 
-	if rg.params.StartTime.After(rg.params.EndTime) {
+	if params.StartTime.After(params.EndTime) {
 		return errors.New("start time is after end time")
+	}
+
+	if params.EndTime.Sub(params.StartTime) > 365*24*time.Hour {
+		return errors.New("time range exceeds duration limit (limit = 1 year)")
 	}
 
 	return nil
 }
 
-func (rg *reportExporter) asyncFetchReports() (typedpipe.Reader[model.Report], error) {
-	return rg.reportMySQLRepository.AsyncQueryReport(rg.ctx, repository.QueryReportFilter{
-		ShopID: &rg.params.ShopID,
+func (rg *reportExporter) asyncFetchReports(
+	reportExporterErrGroupCtx context.Context,
+	params usecase.ExportReportParams,
+) (
+	typedpipe.Reader[model.Report],
+	error,
+) {
+	return rg.reportMySQLRepository.AsyncQueryReport(reportExporterErrGroupCtx, repository.QueryReportFilter{
+		ShopID: &params.ShopID,
 		OrderSettlementTimeRange: &repository.QueryReportTimeRange{
-			StartTime: &rg.params.StartTime,
-			EndTime:   &rg.params.EndTime,
+			StartTime: &params.StartTime,
+			EndTime:   &params.EndTime,
 		},
 	})
 }
 
-func (rg *reportExporter) asyncBuildReportLine(reportDataStream typedpipe.Reader[model.Report]) (typedpipe.Reader[model.ReportLine], error) {
+func (rg *reportExporter) asyncBuildReportLine(
+	reportExporterErrGroupCtx context.Context,
+	reportExporterErrGroup *errgroup.Group,
+	reportDataStream typedpipe.Reader[model.Report],
+) (
+	typedpipe.Reader[model.ReportLine],
+	error,
+) {
 	var (
 		reportLineWriter, reportLineReader, _     = typedpipe.New[model.ReportLine]()
-		reportLineWorkerEg, reportLineWorkerEgCtx = errgroup.WithContext(rg.ctx)
+		reportLineWorkerEg, reportLineWorkerEgCtx = errgroup.WithContext(reportExporterErrGroupCtx)
 		reportLineWorkerPoolCount                 = 32
 	)
 
-	reportLineWorkerEg.SetLimit(reportLineWorkerPoolCount)
 	for i := 0; i < reportLineWorkerPoolCount; i++ {
 		reportLineWorkerEg.Go(func() error {
 			defer func() {
@@ -139,51 +154,33 @@ func (rg *reportExporter) asyncBuildReportLine(reportDataStream typedpipe.Reader
 		})
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				reportLineWriter.CloseWithError(fmt.Errorf("%v", r))
-			}
-		}()
-
+	reportExporterErrGroup.Go(func() error {
 		if err := reportLineWorkerEg.Wait(); err != nil {
 			reportLineWriter.CloseWithError(err)
-			return
+			return err
 		}
 
 		reportLineWriter.Close()
-	}()
+		return nil
+	})
 
 	return reportLineReader, nil
 }
 
-func (rg *reportExporter) asyncBuildReportCSVFile(reportLineDataStream typedpipe.Reader[model.ReportLine]) (io.ReadCloser, error) {
+func (rg *reportExporter) asyncBuildReportCSVFile(
+	reportExporterErrGroupCtx context.Context,
+	reportExporterErrGroup *errgroup.Group,
+	reportLineDataStream typedpipe.Reader[model.ReportLine],
+) (
+	io.ReadCloser,
+	error,
+) {
 	var (
 		reportFileReader, reportFileWriter = io.Pipe()
 		reportFileCSVWriter                = csv.NewWriter(bufio.NewWriterSize(reportFileWriter, 1024*1024))
-		reportCSVEg, reportCSVEgCtx        = errgroup.WithContext(rg.ctx)
+		reportCSVEg, reportCSVEgCtx        = errgroup.WithContext(reportExporterErrGroupCtx)
 	)
 
-	if err := reportFileCSVWriter.Write([]string{
-		"Shop ID",
-		"Fee ID",
-		"Order ID",
-		"Order Creation Time",
-		"Order Payment Time",
-		"Order Settlement Time",
-		"Order Detail ID",
-		"Product ID",
-		"Category ID",
-		"Product Price Amount",
-		"Promo Amount",
-		"Fee Base Amount",
-		"Fee Final Amount",
-	}); err != nil {
-		reportFileWriter.CloseWithError(err)
-		return nil, err
-	}
-
-	reportCSVEg.SetLimit(1)
 	reportCSVEg.Go(func() error {
 		defer func() {
 			if r := recover(); r != nil {
@@ -191,14 +188,30 @@ func (rg *reportExporter) asyncBuildReportCSVFile(reportLineDataStream typedpipe
 			}
 		}()
 
+		if err := reportFileCSVWriter.Write([]string{
+			"Shop ID",
+			"Fee ID",
+			"Order ID",
+			"Order Creation Time",
+			"Order Payment Time",
+			"Order Settlement Time",
+			"Order Detail ID",
+			"Product ID",
+			"Category ID",
+			"Product Price Amount",
+			"Promo Amount",
+			"Fee Base Amount",
+			"Fee Final Amount",
+		}); err != nil {
+			reportFileWriter.CloseWithError(err)
+			return err
+		}
+
 		for {
 			reportLine, err := reportLineDataStream.Read(reportCSVEgCtx)
 			if err != nil {
 				if !errors.Is(err, typedpipe.ErrPipeClosed) {
-					if closeErr := reportFileWriter.CloseWithError(err); closeErr != nil {
-						return closeErr
-					}
-
+					reportFileWriter.CloseWithError(err)
 					return err
 				}
 
@@ -220,7 +233,7 @@ func (rg *reportExporter) asyncBuildReportCSVFile(reportLineDataStream typedpipe
 				strconv.FormatFloat(reportLine.FeeBaseAmount, 'f', 2, 64),
 				strconv.FormatFloat(reportLine.FeeFinalAmount, 'f', 2, 64),
 			}); writerError != nil {
-				if closeErr := reportFileWriter.CloseWithError(err); closeErr != nil {
+				if closeErr := reportFileWriter.CloseWithError(writerError); closeErr != nil {
 					return closeErr
 				}
 
@@ -229,20 +242,16 @@ func (rg *reportExporter) asyncBuildReportCSVFile(reportLineDataStream typedpipe
 		}
 	})
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				reportFileWriter.CloseWithError(fmt.Errorf("%v", r))
-			}
-		}()
-
+	reportExporterErrGroup.Go(func() error {
 		if err := reportCSVEg.Wait(); err != nil {
 			reportFileWriter.CloseWithError(err)
-			return
+			return err
 		}
 
+		reportFileCSVWriter.Flush()
 		reportFileWriter.Close()
-	}()
+		return nil
+	})
 
 	return reportFileReader, nil
 }

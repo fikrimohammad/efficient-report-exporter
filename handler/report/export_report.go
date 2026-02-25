@@ -44,7 +44,7 @@ func (h *Handler) ExportReport(c fiber.Ctx) error {
 	})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err,
+			"error": err.Error(),
 		})
 	}
 
