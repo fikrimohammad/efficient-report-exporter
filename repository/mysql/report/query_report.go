@@ -91,12 +91,12 @@ func (r *repo) buildReportQuery(_ context.Context, filter repository.QueryReport
 
 		if startTime != nil && !startTime.IsZero() {
 			orderSettlementTimeRangeQuery = append(orderSettlementTimeRangeQuery, "order_settlement_time >= :order_settlement_time_start_time")
-			conditionsArgs["order_settlement_start_time"] = *startTime
+			conditionsArgs["order_settlement_time_start_time"] = *startTime
 		}
 
 		if endTime != nil && !endTime.IsZero() {
 			orderSettlementTimeRangeQuery = append(orderSettlementTimeRangeQuery, "order_settlement_time <= :order_settlement_time_end_time")
-			conditionsArgs["order_settlement_end_time"] = *endTime
+			conditionsArgs["order_settlement_time_end_time"] = *endTime
 		}
 
 		if len(orderSettlementTimeRangeQuery) > 0 {
