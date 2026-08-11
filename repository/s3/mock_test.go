@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	commons3 "github.com/fikrimohammad/efficient-report-exporter/common/s3"
+	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 )
 
 var (

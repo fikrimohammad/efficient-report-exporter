@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/apache/rocketmq-client-go/v2/primitive"
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 )
 

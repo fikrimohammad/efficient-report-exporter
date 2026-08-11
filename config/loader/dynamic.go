@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/confloader"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 )
 

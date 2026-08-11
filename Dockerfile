@@ -19,10 +19,10 @@ COPY vendor/ ./vendor/
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=vendor -trimpath \
-      -ldflags "-s -w -X github.com/fikrimohammad/efficient-report-exporter/common/appinfo.version=${VERSION}" \
+      -ldflags "-s -w -X github.com/fikrimohammad/go-dev-sdk/appinfo.version=${VERSION}" \
       -o /out/api ./cmd/api \
  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -mod=vendor -trimpath \
-      -ldflags "-s -w -X github.com/fikrimohammad/efficient-report-exporter/common/appinfo.version=${VERSION}" \
+      -ldflags "-s -w -X github.com/fikrimohammad/go-dev-sdk/appinfo.version=${VERSION}" \
       -o /out/mq ./cmd/mq
 
 # ── API image ───────────────────────────────────────────────────────────────

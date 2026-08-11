@@ -3,7 +3,7 @@ package mysql
 import (
 	"testing"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/db"
+	"github.com/fikrimohammad/go-dev-sdk/db"
 )
 
 // stubDB is a non-nil db.DB used only to satisfy New's nil-check in tests that

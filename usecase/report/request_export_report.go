@@ -3,9 +3,9 @@ package report
 import (
 	"context"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/logs"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/tracer"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"github.com/fikrimohammad/go-dev-sdk/observability/logs"
+	"github.com/fikrimohammad/go-dev-sdk/observability/tracer"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"

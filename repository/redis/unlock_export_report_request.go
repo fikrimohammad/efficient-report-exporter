@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/redis/go-redis/v9"
 )

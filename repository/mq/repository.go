@@ -1,8 +1,8 @@
 package mq
 
 import (
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
-	rocketmqproducer "github.com/fikrimohammad/efficient-report-exporter/common/rocketmq/producer"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )
 

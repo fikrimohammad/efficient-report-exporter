@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/fikrimohammad/efficient-report-exporter/app"
-	"github.com/fikrimohammad/efficient-report-exporter/common/apiserver"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/metrics"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/tracer"
+	"github.com/fikrimohammad/go-dev-sdk/apiserver"
+	"github.com/fikrimohammad/go-dev-sdk/observability/metrics"
+	"github.com/fikrimohammad/go-dev-sdk/observability/tracer"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	apihandler "github.com/fikrimohammad/efficient-report-exporter/handler/api"
 )

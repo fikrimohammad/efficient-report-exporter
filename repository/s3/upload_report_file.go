@@ -3,8 +3,8 @@ package s3
 import (
 	"context"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
-	commons3 "github.com/fikrimohammad/efficient-report-exporter/common/s3"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )

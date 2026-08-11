@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
 )
 

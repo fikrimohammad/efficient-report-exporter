@@ -6,16 +6,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/apiserver"
-	"github.com/fikrimohammad/efficient-report-exporter/common/db"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/metrics"
-	"github.com/fikrimohammad/efficient-report-exporter/common/observability/tracer"
-	commonredis "github.com/fikrimohammad/efficient-report-exporter/common/redis"
-	rocketmqconsumer "github.com/fikrimohammad/efficient-report-exporter/common/rocketmq/consumer"
-	rocketmqproducer "github.com/fikrimohammad/efficient-report-exporter/common/rocketmq/producer"
-	commons3 "github.com/fikrimohammad/efficient-report-exporter/common/s3"
+	"github.com/fikrimohammad/go-dev-sdk/apiserver"
+	"github.com/fikrimohammad/go-dev-sdk/db"
+	"github.com/fikrimohammad/go-dev-sdk/observability/metrics"
+	"github.com/fikrimohammad/go-dev-sdk/observability/tracer"
+	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
+	rocketmqconsumer "github.com/fikrimohammad/go-dev-sdk/rocketmq/consumer"
+	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
+	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/confloader"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 )
 

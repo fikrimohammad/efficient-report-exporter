@@ -10,9 +10,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/confloader"
-	"github.com/fikrimohammad/efficient-report-exporter/common/errgroup"
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
+	"github.com/fikrimohammad/go-dev-sdk/errgroup"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/config"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"

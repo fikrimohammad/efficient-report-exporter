@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/fikrimohammad/efficient-report-exporter/app"
-	"github.com/fikrimohammad/efficient-report-exporter/common/appinfo"
-	"github.com/fikrimohammad/efficient-report-exporter/common/rocketmq/consumer"
+	"github.com/fikrimohammad/go-dev-sdk/appinfo"
+	"github.com/fikrimohammad/go-dev-sdk/rocketmq/consumer"
 	mqhandler "github.com/fikrimohammad/efficient-report-exporter/handler/mq"
 )
 

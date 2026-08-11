@@ -22,7 +22,7 @@ APP_NAME ?= efficient-report-exporter
 # from VCS metadata; set an explicit value at build/deploy time when a stable
 # release version is needed:  make build VERSION=1.4.2
 VERSION ?= dev
-LDFLAGS := -X github.com/fikrimohammad/efficient-report-exporter/common/appinfo.version=$(VERSION)
+LDFLAGS := -X github.com/fikrimohammad/go-dev-sdk/appinfo.version=$(VERSION)
 
 # Logging format & level for run targets.
 # Override:  make run/api LOG_FORMAT=json LOG_LEVEL=info

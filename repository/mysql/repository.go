@@ -1,8 +1,8 @@
 package mysql
 
 import (
-	"github.com/fikrimohammad/efficient-report-exporter/common/db"
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
+	"github.com/fikrimohammad/go-dev-sdk/db"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )
 

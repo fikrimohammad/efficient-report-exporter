@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/errgroup"
+	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/fikrimohammad/efficient-report-exporter/common/errs"
-	commonredis "github.com/fikrimohammad/efficient-report-exporter/common/redis"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )

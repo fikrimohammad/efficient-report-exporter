@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	commonredis "github.com/fikrimohammad/efficient-report-exporter/common/redis"
+	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
 	"github.com/redis/go-redis/v9"
 )
 
