@@ -4,34 +4,34 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
+
+	"github.com/fikrimohammad/efficient-report-exporter/constant"
 )
 
-const ReportNameTimeFormat = "20060102"
-const ReportLineTimeFormat = "2006-01-02 15:04:05"
-
 type Report struct {
-	ID                  int64            `json:"id"`
-	ShopID              int64            `json:"shop_id"`
-	OrderID             int64            `json:"order_id"`
-	OrderCreationTime   time.Time        `json:"order_creation_time"`
-	OrderPaymentTime    time.Time        `json:"order_payment_time"`
-	OrderSettlementTime time.Time        `json:"order_settlement_time"`
-	FeeID               int64            `json:"fee_id"`
-	Details             ReportFeeDetails `json:"details"`
-	CreationTime        time.Time        `json:"creation_time"`
-	UpdateTime          time.Time        `json:"update_time"`
+	ID                  int64            `db:"id" json:"id"`
+	ShopID              int64            `db:"shop_id" json:"shop_id"`
+	OrderID             int64            `db:"order_id" json:"order_id"`
+	OrderCreationTime   time.Time        `db:"order_creation_time" json:"order_creation_time"`
+	OrderPaymentTime    time.Time        `db:"order_payment_time" json:"order_payment_time"`
+	OrderSettlementTime time.Time        `db:"order_settlement_time" json:"order_settlement_time"`
+	FeeID               int64            `db:"fee_id" json:"fee_id"`
+	Details             ReportFeeDetails `db:"details" json:"details"`
+	CreationTime        time.Time        `db:"creation_time" json:"creation_time"`
+	UpdateTime          time.Time        `db:"update_time" json:"update_time"`
 }
 
 type ReportFeeDetails []ReportFeeDetail
 
-func (rfds *ReportFeeDetails) Scan(src interface{}) error {
+func (rfds *ReportFeeDetails) Scan(src any) error {
 	var source []byte
-	switch src.(type) {
+	switch src := src.(type) {
 	case string:
-		source = []byte(src.(string))
+		source = []byte(src)
 	case []byte:
-		source = src.([]byte)
+		source = src
 	default:
 		return errors.New("incompatible type for ReportFeeDetails")
 	}
@@ -61,4 +61,66 @@ type ReportLine struct {
 	OrderSettlementTime time.Time `json:"order_settlement_time"`
 	FeeID               int64
 	ReportFeeDetail
+}
+
+func (rl *ReportLine) ToCSVRow() []string {
+	return []string{
+		strconv.FormatInt(rl.ShopID, 10),
+		strconv.FormatInt(rl.FeeID, 10),
+		strconv.FormatInt(rl.OrderID, 10),
+		rl.OrderCreationTime.Format(constant.ReportLineTimeFormat),
+		rl.OrderPaymentTime.Format(constant.ReportLineTimeFormat),
+		rl.OrderSettlementTime.Format(constant.ReportLineTimeFormat),
+		strconv.FormatInt(rl.OrderDetailID, 10),
+		strconv.FormatInt(rl.ProductID, 10),
+		strconv.FormatInt(rl.CategoryID, 10),
+		strconv.FormatFloat(rl.ProductPriceAmount, 'f', -1, 64),
+		strconv.FormatFloat(rl.PromoAmount, 'f', -1, 64),
+		strconv.FormatFloat(rl.FeeBaseAmount, 'f', -1, 64),
+		strconv.FormatFloat(rl.FeeFinalAmount, 'f', -1, 64),
+	}
+}
+
+type ExportReportJob struct {
+	ID           int64                          `db:"id" json:"id,string"`
+	RequestID    int64                          `db:"request_id" json:"request_id"`
+	ShopID       int64                          `db:"shop_id" json:"shop_id"`
+	StartTime    int64                          `db:"start_time" json:"start_time"`
+	EndTime      int64                          `db:"end_time" json:"end_time"`
+	Status       constant.ExportReportJobStatus `db:"status" json:"status"`
+	Extra        ExportReportJobExtra           `db:"extra" json:"extra"`
+	CreationTime int64                          `db:"creation_time" json:"creation_time"`
+	UpdateTime   *int64                         `db:"update_time" json:"update_time,omitempty"`
+}
+
+type ExportReportJobExtra struct {
+	ErrCode  *int    `json:"err_code,omitempty"`
+	ErrMsg   *string `json:"err_msg,omitempty"`
+	FileName *string `json:"file_name,omitempty"`
+}
+
+func (erje *ExportReportJobExtra) Scan(src any) error {
+	var source []byte
+	switch src := src.(type) {
+	case string:
+		source = []byte(src)
+	case []byte:
+		source = src
+	default:
+		return errors.New("incompatible type for ExportReportJobExtra")
+	}
+
+	return json.Unmarshal(source, erje)
+}
+
+func (erje ExportReportJobExtra) Value() (driver.Value, error) {
+	return json.Marshal(erje)
+}
+
+type ExportReportProcessMessage struct {
+	JobID int64 `json:"job_id,string"`
+}
+
+type ExportReportDoneMessage struct {
+	JobID int64 `json:"job_id,string"`
 }

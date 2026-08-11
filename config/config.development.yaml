@@ -1,0 +1,131 @@
+db:
+  # Non-sensitive DB connection settings.
+  # Credentials are loaded from the secret store (see secret_loader).
+  driver: mysql
+  host: 127.0.0.1
+  port: 3306
+  database: efficient_report_exporter
+
+  # ── Optional: connection pool ──────────────────────────────────────────────
+  # Defaults apply when a setting is omitted.
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 1m
+
+redis:
+  # Host, port, and DB index; credentials are loaded from the secret store.
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+
+  # ── Optional: timeouts and connection pool ─────────────────────────────────
+  # Every setting below is commented out on purpose: omitting it (or using 0)
+  # keeps the redis client default. Uncomment to override.
+  #
+  # dial_timeout: 5s             # max time to establish a new connection
+  # read_timeout: 3s             # max time to wait for a read reply
+  # write_timeout: 3s            # max time to wait for a write reply
+  # connect_timeout: 5s          # startup ping timeout used by New()
+  # pool_size: 10                # max connections in the pool
+  # min_idle_conns: 0            # min idle connections kept in the pool
+  # max_idle_conns: 10           # max idle connections held in the pool
+  # conn_max_idle_time: 5m       # idle connections older than this are closed
+  # conn_max_lifetime: 30m       # connections older than this are recycled
+
+s3:
+  # Region and optional S3-compatible endpoint.
+  # Credentials are loaded from the secret store.
+  region: ap-southeast-1
+  endpoint: "http://localhost:9000"   # self-hosted S3-compatible endpoint
+
+  # ── Optional: multipart upload tuning ──────────────────────────────────────
+  # Every setting below is commented out on purpose: omitting it (or using 0)
+  # keeps the S3 SDK default (8MB parts, 16MB multipart threshold, 5 concurrent
+  # transfers, 15-minute presigned URL expiry). Uncomment to override.
+  #
+  # upload_part_size_bytes: 8388608      # part size in bytes (min 5MB)
+  # upload_multipart_threshold: 16777216 # files larger than this are split
+  # transfer_concurrency: 5              # concurrent upload goroutines
+  # presign_default_expiry: 15m          # default presigned URL validity
+
+api_server:
+  addr: ":18081"
+  read_timeout: 30s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+# ── Telemetry ─────────────────────────────────────────────────────────────────
+# Exports metrics and traces to a collector.
+# Disable by removing this section (defaults apply) or leave it commented out
+# while the collector is not running.
+metrics:
+  endpoint: "localhost:4317"   # collector endpoint
+  timeout: 10s                 # exporter connection/export timeout
+  export_interval: 10s         # how often pending metrics are exported
+  # global_kv:                   # extra typed resource attributes on every metric
+  #   environment: development
+
+tracer:
+  endpoint: "localhost:4317"   # collector endpoint
+  export_timeout: 5s           # export timeout
+  # insecure: true             # unset defaults to insecure (no TLS)
+  # headers:                   # extra headers sent with exports
+  #   authorization: "Bearer ..."
+
+# ── Message queue ─────────────────────────────────────────────────────────────
+mq_producers:
+  - endpoints:
+      - 127.0.0.1:9876
+    topic: reporting
+    timeout: 10s
+    max_retry_attempts: 3
+
+mq_consumers:
+  - endpoints:
+      - 127.0.0.1:9876
+    topic: reporting
+    group: export_report_consumer
+    consumption_tags:
+      - export_report_process
+    timeout: 60s
+    max_retry_attempts: 5
+    max_concurrent: 10
+
+    # Behavior (optional; defaults apply when omitted)
+    # consume_model: clustering        # clustering (default) or broadcasting
+    # consume_from_where: last         # last (default), first, or timestamp
+    # consume_timestamp: "2026-01-01T00:00:00Z"   # RFC3339, only when consume_from_where=timestamp
+    # consume_orderly: false           # consume messages in queue order
+
+    # Throughput / flow-control (optional; 0 keeps the SDK default)
+    # consume_message_batch_max_size: 32
+    # max_cached_messages_per_queue: 1000
+    # max_cached_messages_per_topic: 10000
+    # retry_backoff: 3s                # delay before a failed message is redelivered
+
+# ── Secret loader ─────────────────────────────────────────────────────────────
+# Fetches DB, Redis, S3, and dynamic-config credentials from a secret store.
+secret_loader:
+  provider: infisical
+  endpoint: "http://localhost:8080"
+  namespace: "7ede0657-93ec-4eaf-a161-5b7c94ddd582"
+  environment: dev
+  watcher:
+    polling_interval: 30s
+    polling_max_retries: 3
+    polling_retry_delay: 1s
+    polling_retry_backoff: 2.0
+
+# ── Dynamic config loader ─────────────────────────────────────────────────────
+# Fetches runtime-configurable values for the export pipeline.
+# Credentials are loaded from the secret store (see secret_loader).
+dynamic_config_loader:
+  provider: etcd
+  endpoint: "localhost:2379"
+  namespace: "efficient-report-exporter"      # config store root key prefix
+  watcher:
+    polling_interval: 30s
+    polling_max_retries: 3
+    polling_retry_delay: 1s
+    polling_retry_backoff: 2.0
