@@ -1,0 +1,9 @@
+# Keep the build context small and out of the image.
+.git
+.gitignore
+bin/
+seed
+coverage.out
+*.log
+.env
+.codegraph
