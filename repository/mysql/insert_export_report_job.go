@@ -6,9 +6,9 @@ import (
 
 	snowflake "github.com/godruoyi/go-snowflake"
 
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 func (r *repo) InsertExportReportJob(ctx context.Context, params repository.InsertExportReportJobParams) (*model.ExportReportJob, error) {

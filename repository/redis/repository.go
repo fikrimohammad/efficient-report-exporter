@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/fikrimohammad/go-dev-sdk/errs"
-	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
 )
 
 type repo struct {

@@ -3,10 +3,10 @@ package s3
 import (
 	"context"
 
-	"github.com/fikrimohammad/go-dev-sdk/errs"
-	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
+	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 )
 
 func (r *repo) UploadReportFile(ctx context.Context, params repository.UploadReportFileParams) error {

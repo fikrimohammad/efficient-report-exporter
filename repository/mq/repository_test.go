@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/apache/rocketmq-client-go/v2/primitive"
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 type stubProducer struct {

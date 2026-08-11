@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 type mockReportUseCase struct {

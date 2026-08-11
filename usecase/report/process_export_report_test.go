@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/go-typedpipe/v2"
 )
 

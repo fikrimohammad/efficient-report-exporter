@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 func TestGetExportReportJob_Success_Processing(t *testing.T) {

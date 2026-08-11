@@ -3,8 +3,8 @@ package redis
 import (
 	"context"
 
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 func (r *repo) LockExportReportProcess(ctx context.Context, params repository.LockExportReportProcess) error {

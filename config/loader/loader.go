@@ -15,8 +15,8 @@ import (
 	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
 	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 )
 
 // AppConfig is the final merged config from file + secrets.

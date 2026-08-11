@@ -1,9 +1,9 @@
 package mysql
 
 import (
+	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/db"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )
 
 type repo struct {
