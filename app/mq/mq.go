@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/fikrimohammad/efficient-report-exporter/app"
+	mqhandler "github.com/fikrimohammad/efficient-report-exporter/handler/mq"
 	"github.com/fikrimohammad/go-dev-sdk/appinfo"
 	"github.com/fikrimohammad/go-dev-sdk/rocketmq/consumer"
-	mqhandler "github.com/fikrimohammad/efficient-report-exporter/handler/mq"
 )
 
 type Consumer struct {

@@ -1,9 +1,9 @@
 package mq
 
 import (
+	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
 )
 
 type repo struct {

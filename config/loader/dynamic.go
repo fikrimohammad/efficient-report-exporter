@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 )
 
 type DynamicConfig struct {

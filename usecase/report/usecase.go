@@ -1,11 +1,11 @@
 package report
 
 import (
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/config"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 type useCase struct {

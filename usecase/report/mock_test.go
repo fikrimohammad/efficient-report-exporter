@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
-	"github.com/fikrimohammad/go-dev-sdk/confloader/client"
 	"github.com/fikrimohammad/efficient-report-exporter/config"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
+	"github.com/fikrimohammad/go-dev-sdk/confloader/client"
 )
 
 // ---------------------------------------------------------------------------

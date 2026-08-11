@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 )
 
 // Secret is used by confloader — must have flat Getter fields.

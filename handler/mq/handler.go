@@ -1,8 +1,8 @@
 package mq
 
 import (
-	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 type Handler struct {
