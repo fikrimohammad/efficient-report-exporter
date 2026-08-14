@@ -4,6 +4,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"time"
 
@@ -79,6 +81,28 @@ func (rl *ReportLine) ToCSVRow() []string {
 		strconv.FormatFloat(rl.FeeBaseAmount, 'f', -1, 64),
 		strconv.FormatFloat(rl.FeeFinalAmount, 'f', -1, 64),
 	}
+}
+
+// ReportBatch is a fixed time-range slice of a report export, processed as one
+// unit of work in the batched pipeline.
+type ReportBatch struct {
+	ShopID    int64
+	StartTime time.Time
+	EndTime   time.Time
+}
+
+// EntryName returns the zip archive entry name for this batch.
+func (b ReportBatch) EntryName() string {
+	return fmt.Sprintf("batch_%s_%s.csv",
+		b.StartTime.Format(constant.ReportBatchTimeFormat),
+		b.EndTime.Format(constant.ReportBatchTimeFormat))
+}
+
+// ReportBatchFile is the CSV artifact of a single date-range batch, streamed
+// into the zip stage. Name is the archive entry name; Reader carries the bytes.
+type ReportBatchFile struct {
+	Name   string
+	Reader io.ReadCloser
 }
 
 type ExportReportJob struct {

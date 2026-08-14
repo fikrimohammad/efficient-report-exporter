@@ -48,6 +48,7 @@ type UpdateExportReportJobParams struct {
 
 type ReportMySQL interface {
 	QueryReport(ctx context.Context, filter QueryReportFilter) ([]*model.Report, error)
+	CountReport(ctx context.Context, filter QueryReportFilter) (int64, error)
 	QueryExportReportJob(ctx context.Context, params QueryExportReportJobFilter) ([]*model.ExportReportJob, error)
 	InsertExportReportJob(ctx context.Context, params InsertExportReportJobParams) (*model.ExportReportJob, error)
 	UpdateExportReportJob(ctx context.Context, params UpdateExportReportJobParams) error

@@ -20,6 +20,7 @@ import (
 type mockMySQL struct {
 	mu                    sync.Mutex
 	queryReportFn         func(ctx context.Context, filter repository.QueryReportFilter) ([]*model.Report, error)
+	countReportFn         func(ctx context.Context, filter repository.QueryReportFilter) (int64, error)
 	queryExportReportJob  func(ctx context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error)
 	insertExportReportJob func(ctx context.Context, params repository.InsertExportReportJobParams) (*model.ExportReportJob, error)
 	updateExportReportJob func(ctx context.Context, params repository.UpdateExportReportJobParams) error
@@ -29,6 +30,12 @@ func (m *mockMySQL) QueryReport(ctx context.Context, filter repository.QueryRepo
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.queryReportFn(ctx, filter)
+}
+
+func (m *mockMySQL) CountReport(ctx context.Context, filter repository.QueryReportFilter) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.countReportFn(ctx, filter)
 }
 
 func (m *mockMySQL) QueryExportReportJob(ctx context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
@@ -53,6 +60,9 @@ func defaultMockMySQL() *mockMySQL {
 	return &mockMySQL{
 		queryReportFn: func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
 			return nil, nil
+		},
+		countReportFn: func(_ context.Context, _ repository.QueryReportFilter) (int64, error) {
+			return 0, nil
 		},
 		queryExportReportJob: func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
 			return nil, nil
@@ -215,12 +225,13 @@ func newTestDynamicLoader(t interface{ Fatalf(string, ...interface{}) }, pageSiz
 		Watcher:          confloader.DefaultWatcherConfig(),
 	}
 	mc := &mockConfigClient{store: map[string]string{
-		"process_export_report/query_limit_per_page": fmt.Sprintf("%d", ps),
-		"process_export_report/report_line_workers":  "4",
-		"process_export_report/report_csv_workers":   "4",
-		"process_export_report/request_lock_ttl":     "5s",
-		"process_export_report/process_lock_ttl":     "1m0s",
-		"process_export_report/csv_write_buf_size":   "1048576",
+		"process_export_report/query_limit_per_page":       fmt.Sprintf("%d", ps),
+		"process_export_report/max_time_range_per_batch":   "2h0m0s",
+		"process_export_report/max_batch_pipeline_workers": "8",
+		"process_export_report/max_single_file_rows":       "100000",
+		"process_export_report/request_lock_ttl":           "5s",
+		"process_export_report/process_lock_ttl":           "1m0s",
+		"process_export_report/csv_write_buf_size":         "1048576",
 	}}
 	ldr, err := confloader.New[config.DynamicConfig](
 		context.Background(), cfg,
@@ -243,8 +254,9 @@ var (
 
 var (
 	_ = constant.DefaultQueryLimitPerPage
-	_ = constant.DefaultReportLineWorkers
-	_ = constant.DefaultReportCSVWorkers
+	_ = constant.DefaultMaxTimeRangePerBatch
+	_ = constant.DefaultMaxBatchPipelineWorkers
+	_ = constant.DefaultMaxSingleFileRows
 	_ = constant.DefaultRequestLockTTL
 	_ = constant.DefaultProcessLockTTL
 	_ = constant.DefaultCSVWriteBufSize

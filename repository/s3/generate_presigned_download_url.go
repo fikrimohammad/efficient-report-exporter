@@ -18,7 +18,7 @@ func (r *repo) GeneratePresignedDownloadURL(ctx context.Context, params reposito
 	presignURL, err := r.s3.PresignGetObject(ctx, commons3.PresignGetObjectParams{
 		Bucket:                     constant.ReportFileBucket,
 		Key:                        params.FileName,
-		ResponseContentType:        constant.ContentTypeCSV,
+		ResponseContentType:        constant.ContentTypeOctetStream,
 		ResponseContentDisposition: fmt.Sprintf(constant.ContentDispositionPattern, params.FileName),
 		ExpiresIn:                  params.ExpiresIn,
 	})

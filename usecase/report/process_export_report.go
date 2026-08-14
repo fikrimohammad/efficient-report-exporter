@@ -1,12 +1,8 @@
 package report
 
 import (
-	"bufio"
 	"context"
-	"encoding/csv"
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"time"
 
@@ -18,8 +14,6 @@ import (
 	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
-	"github.com/fikrimohammad/go-typedpipe/v2"
-	"github.com/google/uuid"
 )
 
 func (u *useCase) ProcessExportReport(ctx context.Context, params usecase.ProcessExportReportParams) error {
@@ -106,7 +100,6 @@ func (re *reportExporter) queryExportReportJob(ctx context.Context, params useca
 		Limit: constant.SingleRowQueryLimit,
 	})
 	if err != nil {
-
 		return nil, err
 	}
 
@@ -138,30 +131,29 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 
 			return
 		}
-
 	}()
 
-	reportDataStream, fetchReportErr := re.asyncFetchReports(mainPipeline, shopID, startTime, endTime)
-	if fetchReportErr != nil {
-		err = fetchReportErr
+	total, countErr := re.mysqlRepository.CountReport(ctx, repository.QueryReportFilter{
+		ShopID: &shopID,
+		OrderSettlementTimeRange: &repository.QueryReportTimeRange{
+			StartTime: &startTime,
+			EndTime:   &endTime,
+		},
+	})
+	if countErr != nil {
+		err = countErr
 		return err
 	}
 
-	reportLineDataStream, buildReportErr := re.asyncBuildReportLine(ctx, mainPipeline, reportDataStream)
-	if buildReportErr != nil {
-		err = buildReportErr
-		return err
-	}
+	maxSingleFileRows := re.dynamicConfig.Data().MaxSingleFileRows.GetWithDefault(ctx, constant.DefaultMaxSingleFileRows)
 
-	reportCSVFileDataStream, buildCSVFileErr := re.asyncBuildReportCSVFile(ctx, mainPipeline, reportLineDataStream)
-	if buildCSVFileErr != nil {
-		err = buildCSVFileErr
-		return err
+	var reportFileName string
+	if total <= int64(maxSingleFileRows) {
+		reportFileName, err = re.runSinglePipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
+	} else {
+		reportFileName, err = re.runBatchedPipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
 	}
-
-	reportFileName, uploadErr := re.asyncUploadReportFile(mainPipeline, reportCSVFileDataStream)
-	if uploadErr != nil {
-		err = uploadErr
+	if err != nil {
 		return err
 	}
 
@@ -191,187 +183,45 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 	return nil
 }
 
-func (re *reportExporter) asyncFetchReports(
-	mainPipeline *errgroup.Group,
-	shopID int64,
-	startTime, endTime time.Time,
-) (
-	typedpipe.Reader[model.Report],
-	error,
-) {
-	var (
-		reportsDataStreamWriter, reportsDataStreamReader = typedpipe.New[model.Report]()
-	)
-
-	mainPipeline.Go(func(ctx context.Context) error {
-		defer reportsDataStreamWriter.Close()
-
-		var (
-			lastReportID int64
-			limitPerPage = re.dynamicConfig.Data().QueryLimitPerPage.GetWithDefault(ctx, constant.DefaultQueryLimitPerPage)
-		)
-
-		for {
-			reports, err := re.mysqlRepository.QueryReport(ctx, repository.QueryReportFilter{
-				ShopID: &shopID,
-				OrderSettlementTimeRange: &repository.QueryReportTimeRange{
-					StartTime: &startTime,
-					EndTime:   &endTime,
-				},
-				Limit:        limitPerPage,
-				LastReportID: lastReportID,
-			})
-			if err != nil {
-				reportsDataStreamWriter.CloseWithError(err)
-				return err
-			}
-
-			if len(reports) == 0 {
-				return nil
-			}
-
-			for _, r := range reports {
-				writerErr := reportsDataStreamWriter.Write(ctx, *r)
-				if writerErr != nil {
-					reportsDataStreamWriter.CloseWithError(writerErr)
-					return writerErr
-				}
-				lastReportID = r.ID
-			}
-
-			if len(reports) < limitPerPage {
-				break
-			}
-		}
-
-		return nil
-	})
-
-	return reportsDataStreamReader, nil
-}
-
-func (re *reportExporter) asyncBuildReportLine(
-	ctx context.Context,
-	mainPipeline *errgroup.Group,
-	reportDataStream typedpipe.Reader[model.Report],
-) (
-	typedpipe.Reader[model.ReportLine],
-	error,
-) {
-	var (
-		reportLineWriter, reportLineReader = typedpipe.New[model.ReportLine]()
-		reportLineWorkerPoolCount          = re.dynamicConfig.Data().ReportLineWorkers.GetWithDefault(ctx, constant.DefaultReportLineWorkers)
-		reportLinePipeline                 = mainPipeline.SubGroup(errgroup.WithMaxConcurrency(reportLineWorkerPoolCount))
-	)
-
-	for i := 0; i < reportLineWorkerPoolCount; i++ {
-		reportLinePipeline.Go(func(ctx context.Context) error {
-			for {
-				reportData, err := reportDataStream.Read(ctx)
-				if err != nil {
-					if !errors.Is(err, typedpipe.ErrPipeClosed) {
-						return err
-					}
-
-					return nil
-				}
-
-				for _, reportDetail := range reportData.Details {
-					writerError := reportLineWriter.Write(ctx, model.ReportLine{
-						ShopID:              reportData.ShopID,
-						OrderID:             reportData.OrderID,
-						OrderCreationTime:   reportData.OrderCreationTime,
-						OrderPaymentTime:    reportData.OrderPaymentTime,
-						OrderSettlementTime: reportData.OrderSettlementTime,
-						FeeID:               reportData.FeeID,
-						ReportFeeDetail:     reportDetail,
-					})
-					if writerError != nil {
-						return writerError
-					}
-				}
-
-			}
-		})
+func (re *reportExporter) runSinglePipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
+	reports, fetchErr := re.asyncFetchReports(mainPipeline, shopID, startTime, endTime)
+	if fetchErr != nil {
+		return "", fetchErr
 	}
 
-	mainPipeline.Go(func(ctx context.Context) error {
-		if err := reportLinePipeline.Wait(); err != nil {
-			reportLineWriter.CloseWithError(err)
-			return err
-		}
-
-		reportLineWriter.Close()
-		return nil
-	})
-
-	return reportLineReader, nil
-}
-
-func (re *reportExporter) asyncBuildReportCSVFile(
-	ctx context.Context,
-	mainPipeline *errgroup.Group,
-	reportLineDataStream typedpipe.Reader[model.ReportLine],
-) (
-	io.ReadCloser,
-	error,
-) {
-	var (
-		reportFileReader, reportFileWriter = io.Pipe()
-		csvBufSize                         = re.dynamicConfig.Data().CSVWriteBufSize.GetWithDefault(ctx, constant.DefaultCSVWriteBufSize)
-		reportFileCSVWriter                = csv.NewWriter(bufio.NewWriterSize(reportFileWriter, csvBufSize))
-	)
-
-	if err := reportFileCSVWriter.Write(constant.ReportFileCSVHeaders); err != nil {
-		if closeErr := reportFileWriter.CloseWithError(err); closeErr != nil {
-			return nil, closeErr
-		}
-
-		return nil, err
+	lines, lineErr := re.asyncBuildReportLine(ctx, mainPipeline, reports)
+	if lineErr != nil {
+		return "", lineErr
 	}
 
-	mainPipeline.Go(func(ctx context.Context) error {
-		defer func() {
-			reportFileCSVWriter.Flush()
-			_ = reportFileWriter.Close()
-		}()
+	csv, csvErr := re.asyncBuildReportCSVFile(ctx, mainPipeline, lines)
+	if csvErr != nil {
+		return "", csvErr
+	}
 
-		for {
-			reportLine, err := reportLineDataStream.Read(ctx)
-			if err != nil {
-				if !errors.Is(err, typedpipe.ErrPipeClosed) {
-					reportFileWriter.CloseWithError(err)
-					return err
-				}
+	fileName := buildReportFileName(jobID, constant.ReportCSVExtension)
+	if uploadErr := re.asyncUploadReportFile(mainPipeline, csv, fileName); uploadErr != nil {
+		return "", uploadErr
+	}
 
-				return nil
-			}
-
-			if writerError := reportFileCSVWriter.Write(reportLine.ToCSVRow()); writerError != nil {
-				reportFileWriter.CloseWithError(writerError)
-				return writerError
-			}
-		}
-	})
-
-	return reportFileReader, nil
+	return fileName, nil
 }
 
-func (re *reportExporter) asyncUploadReportFile(mainPipeline *errgroup.Group, reportCSVFileDataStream io.ReadCloser) (string, error) {
-	fileID, err := uuid.NewV7()
-	if err != nil {
-		return "", err
+func (re *reportExporter) runBatchedPipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
+	batchFiles, batchErr := re.asyncBuildReportBatchFiles(ctx, mainPipeline, shopID, startTime, endTime)
+	if batchErr != nil {
+		return "", batchErr
 	}
-	fileName := fmt.Sprintf("%s.csv", fileID.String())
 
-	mainPipeline.Go(func(ctx context.Context) error {
-		defer func() { _ = reportCSVFileDataStream.Close() }()
+	zipReader, zipErr := re.asyncZipReportBatchFiles(mainPipeline, batchFiles)
+	if zipErr != nil {
+		return "", zipErr
+	}
 
-		return re.s3Repository.UploadReportFile(ctx, repository.UploadReportFileParams{
-			FileName: fileName,
-			FileData: reportCSVFileDataStream,
-		})
-	})
+	fileName := buildReportFileName(jobID, constant.ReportZipExtension)
+	if uploadErr := re.asyncUploadReportFile(mainPipeline, zipReader, fileName); uploadErr != nil {
+		return "", uploadErr
+	}
 
 	return fileName, nil
 }

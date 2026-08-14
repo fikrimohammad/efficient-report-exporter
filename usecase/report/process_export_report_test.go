@@ -525,8 +525,8 @@ func TestAsyncUploadReportFile_Success(t *testing.T) {
 		_ = pipeW.Close()
 	}()
 
-	fileName, err := re.asyncUploadReportFile(eg, pipeR)
-	if err != nil {
+	const fileName = "report_99.csv"
+	if err := re.asyncUploadReportFile(eg, pipeR, fileName); err != nil {
 		t.Fatalf("asyncUploadReportFile failed: %v", err)
 	}
 
@@ -534,12 +534,6 @@ func TestAsyncUploadReportFile_Success(t *testing.T) {
 		t.Fatalf("pipeline error: %v", err)
 	}
 
-	if fileName == "" {
-		t.Fatal("expected non-empty file name")
-	}
-	if !strings.HasSuffix(fileName, ".csv") {
-		t.Fatalf("expected .csv extension, got %s", fileName)
-	}
 	if uploaded.FileName != fileName {
 		t.Fatalf("expected upload filename %s, got %s", fileName, uploaded.FileName)
 	}
@@ -560,7 +554,7 @@ func TestAsyncUploadReportFile_S3Error(t *testing.T) {
 
 	pipeR, _ := io.Pipe()
 
-	_, err := re.asyncUploadReportFile(eg, pipeR)
+	err := re.asyncUploadReportFile(eg, pipeR, "report_99.csv")
 	if err != nil {
 		t.Fatalf("asyncUploadReportFile should not return error directly: %v", err)
 	}

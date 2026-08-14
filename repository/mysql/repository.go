@@ -35,6 +35,12 @@ const (
 		    report
 	`
 
+	countReportQuery = `
+		SELECT COUNT(*)
+		FROM
+		    report
+	`
+
 	selectExportReportJobsQuery = `
 		SELECT
 			id,

@@ -31,16 +31,18 @@ const (
 )
 
 const (
-	ReportFileNameFormat     = "report_%s_%s_%s.csv"
-	ReportFileNameTimeFormat = "20060102"
-	ReportLineTimeFormat     = "2006-01-02 15:04:05"
-	ReportFileBucket         = "reports"
+	ReportLineTimeFormat  = "2006-01-02 15:04:05"
+	ReportBatchTimeFormat = "20060102150405"
+	ReportCSVExtension    = ".csv"
+	ReportZipExtension    = ".zip"
+	ReportFileBucket      = "reports"
 )
 
 const (
-	DefaultQueryLimitPerPage = 1000
-	DefaultReportLineWorkers = 32
-	DefaultReportCSVWorkers  = 32
+	DefaultQueryLimitPerPage       = 1000
+	DefaultMaxTimeRangePerBatch    = 2 * time.Hour
+	DefaultMaxBatchPipelineWorkers = 8
+	DefaultMaxSingleFileRows       = 100_000
 )
 
 const (
@@ -51,7 +53,7 @@ const (
 
 const (
 	SingleRowQueryLimit       = 1
-	ContentTypeCSV            = "text/csv"
+	ContentTypeOctetStream    = "application/octet-stream"
 	ContentDispositionPattern = `attachment; filename="%s"`
 )
 

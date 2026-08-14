@@ -22,7 +22,7 @@ func (r *repo) UploadReportFile(ctx context.Context, params repository.UploadRep
 		Bucket:      constant.ReportFileBucket,
 		Key:         params.FileName,
 		Body:        params.FileData,
-		ContentType: constant.ContentTypeCSV,
+		ContentType: constant.ContentTypeOctetStream,
 	})
 	if err != nil {
 		err = errs.Wrap(errs.S3Internal, "upload report file", err)
