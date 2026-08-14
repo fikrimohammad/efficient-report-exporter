@@ -23,11 +23,37 @@ func (r *repo) QueryReport(ctx context.Context, filter repository.QueryReportFil
 }
 
 func (r *repo) buildReportQuery(_ context.Context, filter repository.QueryReportFilter) (string, map[string]interface{}) {
+	conditionsQuery, queryArgsMap := buildReportConditions(filter)
+
+	limitQuery := ""
+	if filter.Limit > 0 {
+		if filter.Limit > repository.MaxQueryReportLimit {
+			filter.Limit = repository.MaxQueryReportLimit
+		}
+
+		limitQuery = limitQuery + " LIMIT :limit"
+		queryArgsMap["limit"] = filter.Limit
+	}
+
+	if len(conditionsQuery) == 0 {
+		return selectReportQuery, nil
+	}
+
+	query := selectReportQuery +
+		fmt.Sprintf("\nWHERE %s", strings.Join(conditionsQuery, " AND ")) +
+		" ORDER BY id ASC" +
+		limitQuery
+
+	return query, queryArgsMap
+}
+
+// buildReportConditions builds the shared WHERE conditions (shop_id and
+// order_settlement_time range, plus the id cursor) used by both the report
+// select and count queries, so the two can't drift.
+func buildReportConditions(filter repository.QueryReportFilter) ([]string, map[string]interface{}) {
 	var (
 		conditionsQuery = make([]string, 0)
-		limitQuery      = ""
 		queryArgsMap    = make(map[string]any)
-		baseQuery       = selectReportQuery
 	)
 
 	if filter.ShopID != nil && *filter.ShopID > 0 {
@@ -62,23 +88,5 @@ func (r *repo) buildReportQuery(_ context.Context, filter repository.QueryReport
 		queryArgsMap["last_report_id"] = filter.LastReportID
 	}
 
-	if filter.Limit > 0 {
-		if filter.Limit > repository.MaxQueryReportLimit {
-			filter.Limit = repository.MaxQueryReportLimit
-		}
-
-		limitQuery = limitQuery + " LIMIT :limit"
-		queryArgsMap["limit"] = filter.Limit
-	}
-
-	if len(conditionsQuery) == 0 {
-		return baseQuery, nil
-	}
-
-	baseQuery = baseQuery +
-		fmt.Sprintf("\nWHERE %s", strings.Join(conditionsQuery, " AND ")) +
-		" ORDER BY id ASC" +
-		limitQuery
-
-	return baseQuery, queryArgsMap
+	return conditionsQuery, queryArgsMap
 }

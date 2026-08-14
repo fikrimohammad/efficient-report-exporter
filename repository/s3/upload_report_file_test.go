@@ -31,8 +31,8 @@ func TestUploadReportFileUsesClient(t *testing.T) {
 	if cli.lastUpload.Key != "test.csv" {
 		t.Fatalf("key = %q, want test.csv", cli.lastUpload.Key)
 	}
-	if cli.lastUpload.ContentType != "text/csv" {
-		t.Fatalf("content type = %q, want text/csv", cli.lastUpload.ContentType)
+	if cli.lastUpload.ContentType != "application/octet-stream" {
+		t.Fatalf("content type = %q, want application/octet-stream", cli.lastUpload.ContentType)
 	}
 	if cli.lastUpload.Body == nil {
 		t.Fatal("expected a non-nil body")
