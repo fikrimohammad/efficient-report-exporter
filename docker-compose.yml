@@ -8,6 +8,12 @@
 # The tests connect over 127.0.0.1 using the TEST_* environment variables
 # (see integration/helpers_test.go); when those are unset they fall back to the
 # app's config loader (local development with Infisical/etcd).
+#
+# The RocketMQ broker only auto-creates a topic on first publish, but the e2e
+# test's consumer needs the topic's route info at start. Create it once the
+# broker is up (the CI workflow does this automatically):
+#   docker compose exec -T rocketmq-broker \
+#     sh mqadmin updateTopic -b 127.0.0.1:10911 -t reporting -r 8 -w 8
 
 services:
   mysql:
