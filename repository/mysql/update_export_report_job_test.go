@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -17,7 +16,7 @@ func TestBuildUpdateExportReportJobQuery(t *testing.T) {
 		Status: constant.ExportReportJobStatusFailed,
 	}
 
-	query, args := r.buildUpdateExportReportJobQuery(context.Background(), params)
+	query, args := r.buildUpdateExportReportJobQuery(params)
 
 	if !strings.Contains(query, "UPDATE export_report_job") {
 		t.Fatal("should be an UPDATE query")

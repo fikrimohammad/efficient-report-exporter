@@ -5,16 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config/loader"
-	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/config"
 )
 
 func main() {
@@ -30,11 +27,14 @@ func main() {
 
 	ctx := context.Background()
 
-	dbHost, dbPort, dbName := loadDBConfig()
-	dbUser, dbPass := loadDBSecrets(ctx)
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	defer func() { _ = cfg.Dynamic.Stop() }()
 
-	dsn := fmt.Sprintf("mysql://%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&multiStatements=true",
-		dbUser, dbPass, dbHost, dbPort, dbName)
+	dsn := fmt.Sprintf("mysql://%s:%s@tcp(%s:%d)/%s?parseTime=true&charset=utf8mb4&multiStatements=true",
+		cfg.DB.Username, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.Database)
 
 	m, err := migrate.New("file://db/migrations", dsn)
 	if err != nil {
@@ -70,84 +70,6 @@ func runNew() {
 		_ = f.Close()
 		fmt.Printf("Created: %s\n", path)
 	}
-}
-
-func loadDBConfig() (host, port, name string) {
-	env := os.Getenv("APP_ENV")
-	if env == "" {
-		env = constant.DefaultEnv
-	}
-
-	fileCfg, err := loader.LoadFile(filepath.Join("config", fmt.Sprintf(constant.ConfigFileFormat, env)))
-	if err != nil {
-		log.Fatalf("failed to load config file: %v", err)
-	}
-
-	if fileCfg.DB.Host != "" {
-		host = fileCfg.DB.Host
-	}
-	if host == "" {
-		host = envOrDefault("DB_HOST", "127.0.0.1")
-	}
-
-	if fileCfg.DB.Port > 0 {
-		port = strconv.Itoa(fileCfg.DB.Port)
-	}
-	if port == "" {
-		port = envOrDefault("DB_PORT", "3306")
-	}
-
-	if fileCfg.DB.Database != "" {
-		name = fileCfg.DB.Database
-	}
-	if name == "" {
-		name = envOrDefault("DB_NAME", "export_report")
-	}
-
-	return
-}
-
-func loadDBSecrets(ctx context.Context) (user, pass string) {
-	env := os.Getenv("APP_ENV")
-	if env == "" {
-		env = constant.DefaultEnv
-	}
-
-	fileCfg, err := loader.LoadFile(filepath.Join("config", fmt.Sprintf(constant.ConfigFileFormat, env)))
-	if err != nil {
-		log.Fatalf("failed to load config file: %v", err)
-	}
-
-	secretLoader, err := loader.LoadSecret(ctx, constant.AppName, fileCfg.SecretLoader)
-	if err != nil {
-		log.Fatalf("failed to load secrets from Infisical: %v", err)
-	}
-	defer func() {
-		if stopErr := secretLoader.Stop(); stopErr != nil {
-			log.Printf("warning: secret loader stop error: %v", stopErr)
-		}
-	}()
-
-	secrets := secretLoader.Data()
-
-	user, err = secrets.DBUserName.Get(ctx)
-	if err != nil {
-		log.Fatalf("failed to get DB username from secrets: %v", err)
-	}
-
-	pass, err = secrets.DBPassword.Get(ctx)
-	if err != nil {
-		log.Fatalf("failed to get DB password from secrets: %v", err)
-	}
-
-	return
-}
-
-func envOrDefault(key, defaultVal string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return defaultVal
 }
 
 func runMigration(m *migrate.Migrate, command string) {

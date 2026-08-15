@@ -5,24 +5,27 @@ go 1.26.5
 require (
 	github.com/apache/rocketmq-client-go/v2 v2.1.3-0.20260112025018-99c433634e09
 	github.com/apache/thrift v0.16.0
+	github.com/aws/aws-sdk-go-v2 v1.43.5
+	github.com/aws/aws-sdk-go-v2/config v1.32.36
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.35
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.1
 	github.com/bytedance/sonic v1.15.2
 	github.com/cloudwego/hertz v0.10.6
+	github.com/djherbis/buffer v1.2.0
+	github.com/djherbis/nio/v3 v3.0.1
 	github.com/fikrimohammad/go-typedpipe/v2 v2.0.5
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/godruoyi/go-snowflake v0.0.2
 	github.com/golang-migrate/migrate/v4 v4.18.2
-	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.22.0
 	go.opentelemetry.io/otel v1.45.0
+	go.uber.org/mock v0.6.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.43.5 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.36 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.35 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.12 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/infisical/go-sdk v0.8.0 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	go.etcd.io/etcd/client/v3 v3.7.1 // indirect

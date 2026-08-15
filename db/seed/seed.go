@@ -8,15 +8,12 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"path/filepath"
-	"strconv"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	snowflake "github.com/godruoyi/go-snowflake"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config/loader"
-	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/config"
 )
 
 type feeDetail struct {
@@ -45,11 +42,14 @@ var seederOrder = []string{"report", "export_report_job"}
 func main() {
 	ctx := context.Background()
 
-	dbHost, dbPort, dbName := loadDBConfig()
-	dbUser, dbPass := loadDBSecrets(ctx)
+	cfg, err := config.Load(ctx)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+	defer func() { _ = cfg.Dynamic.Stop() }()
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true&charset=utf8mb4",
-		dbUser, dbPass, dbHost, dbPort, dbName)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true&charset=utf8mb4",
+		cfg.DB.Username, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.Database)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -97,88 +97,6 @@ func resolveTables() []string {
 	return tables
 }
 
-func loadDBConfig() (host, port, name string) {
-	env := os.Getenv("APP_ENV")
-	if env == "" {
-		env = constant.DefaultEnv
-	}
-
-	configPath := filepath.Join("config", fmt.Sprintf(constant.ConfigFileFormat, env))
-	fileCfg, err := loader.LoadFile(configPath)
-	if err != nil {
-		log.Fatalf("failed to load config file %s: %v", configPath, err)
-	}
-
-	if fileCfg.DB.Host != "" {
-		host = fileCfg.DB.Host
-	}
-	if host == "" {
-		host = envOrDefault("DB_HOST", "127.0.0.1")
-	}
-
-	if fileCfg.DB.Port > 0 {
-		port = strconv.Itoa(fileCfg.DB.Port)
-	}
-	if port == "" {
-		port = envOrDefault("DB_PORT", "3306")
-	}
-
-	if fileCfg.DB.Database != "" {
-		name = fileCfg.DB.Database
-	}
-	if name == "" {
-		name = envOrDefault("DB_NAME", "export_report")
-	}
-
-	log.Printf("DB config: host=%s port=%s name=%s", host, port, name)
-	return
-}
-
-func loadDBSecrets(ctx context.Context) (user, pass string) {
-	env := os.Getenv("APP_ENV")
-	if env == "" {
-		env = constant.DefaultEnv
-	}
-
-	configPath := filepath.Join("config", fmt.Sprintf(constant.ConfigFileFormat, env))
-	fileCfg, err := loader.LoadFile(configPath)
-	if err != nil {
-		log.Fatalf("failed to load config file %s: %v", configPath, err)
-	}
-
-	secretLoader, err := loader.LoadSecret(ctx, constant.AppName, fileCfg.SecretLoader)
-	if err != nil {
-		log.Fatalf("failed to load secrets from Infisical: %v", err)
-	}
-	defer func() {
-		if stopErr := secretLoader.Stop(); stopErr != nil {
-			log.Printf("warning: secret loader stop error: %v", stopErr)
-		}
-	}()
-
-	secrets := secretLoader.Data()
-
-	user, err = secrets.DBUserName.Get(ctx)
-	if err != nil {
-		log.Fatalf("failed to get DB username from secrets: %v", err)
-	}
-
-	pass, err = secrets.DBPassword.Get(ctx)
-	if err != nil {
-		log.Fatalf("failed to get DB password from secrets: %v", err)
-	}
-
-	log.Println("DB credentials loaded from Infisical")
-	return
-}
-
-func envOrDefault(key, defaultVal string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return defaultVal
-}
-
 func seedReports(db *sql.DB) {
 	const (
 		numShops       = 50
@@ -211,7 +129,7 @@ func seedReports(db *sql.DB) {
 	inserted := 0
 	nextFeeID := int64(1)
 	batch := make([]string, 0, batchSize)
-	args := make([]interface{}, 0, batchSize*7)
+	args := make([]any, 0, batchSize*7)
 
 	for shopNum := 0; shopNum < numShops; shopNum++ {
 		shopID := int64(1001 + shopNum)
@@ -267,7 +185,7 @@ func seedReports(db *sql.DB) {
 	log.Printf("  report: %d rows seeded (atomic)", inserted)
 }
 
-func insertReportBatch(tx *sql.Tx, placeholders []string, args []interface{}) {
+func insertReportBatch(tx *sql.Tx, placeholders []string, args []any) {
 	query := "INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details) VALUES "
 	query += joinPlaceholders(placeholders)
 	if _, err := tx.Exec(query, args...); err != nil {
@@ -309,7 +227,7 @@ func seedExportReportJobs(db *sql.DB) {
 	failedMsg := "internal server error"
 
 	batch := make([]string, 0, batchSize)
-	args := make([]interface{}, 0, batchSize*9)
+	args := make([]any, 0, batchSize*9)
 
 	for i := 0; i < totalJobs; i++ {
 		jobID, err := snowflake.NextID()
@@ -368,7 +286,7 @@ func seedExportReportJobs(db *sql.DB) {
 	log.Printf("  export_report_job: %d rows seeded (atomic)", totalJobs)
 }
 
-func insertJobBatch(tx *sql.Tx, placeholders []string, args []interface{}) {
+func insertJobBatch(tx *sql.Tx, placeholders []string, args []any) {
 	query := "INSERT INTO export_report_job (id, request_id, shop_id, start_time, end_time, status, extra, creation_time, update_time) VALUES "
 	query += joinPlaceholders(placeholders)
 	if _, err := tx.Exec(query, args...); err != nil {

@@ -10,14 +10,13 @@ import (
 )
 
 type DynamicConfig struct {
-	QueryLimitPerPage       confloader.Getter[int]               `conf:"folder=process_export_report,key=query_limit_per_page"`
-	MaxTimeRangePerBatch    confloader.Getter[time.Duration]     `conf:"folder=process_export_report,key=max_time_range_per_batch"`
-	MaxBatchPipelineWorkers confloader.Getter[int]               `conf:"folder=process_export_report,key=max_batch_pipeline_workers"`
-	MaxSingleFileRows       confloader.Getter[int]               `conf:"folder=process_export_report,key=max_single_file_rows"`
-	RequestLockTTL          confloader.Getter[time.Duration]     `conf:"folder=process_export_report,key=request_lock_ttl"`
-	ProcessLockTTL          confloader.Getter[time.Duration]     `conf:"folder=process_export_report,key=process_lock_ttl"`
-	CSVWriteBufSize         confloader.Getter[int]               `conf:"folder=process_export_report,key=csv_write_buf_size"`
-	HandlerTimeouts         confloader.Getter[map[string]string] `conf:"folder=api_handler,key=timeouts"`
+	QueryLimitPerPage       confloader.Getter[int]           `conf:"folder=process_export_report,key=query_limit_per_page"`
+	MaxTimeRangePerBatch    confloader.Getter[time.Duration] `conf:"folder=process_export_report,key=max_time_range_per_batch"`
+	MaxBatchPipelineWorkers confloader.Getter[int]           `conf:"folder=process_export_report,key=max_batch_pipeline_workers"`
+	MaxSingleFileRows       confloader.Getter[int]           `conf:"folder=process_export_report,key=max_single_file_rows"`
+	RequestLockTTL          confloader.Getter[time.Duration] `conf:"folder=process_export_report,key=request_lock_ttl"`
+	ProcessLockTTL          confloader.Getter[time.Duration] `conf:"folder=process_export_report,key=process_lock_ttl"`
+	CSVWriteBufSize         confloader.Getter[int]           `conf:"folder=process_export_report,key=csv_write_buf_size"`
 }
 
 func LoadDynamicConfig(ctx context.Context, appName string, cfg confloader.Config, userName, password string) (*confloader.Loader[DynamicConfig], error) {

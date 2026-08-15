@@ -5,17 +5,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
-	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"go.uber.org/mock/gomock"
 )
 
 func TestGetExportReportJob_Success_Processing(t *testing.T) {
-	mockMySQL := defaultMockMySQL()
-	mockMySQL.queryExportReportJob = func(_ context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{
 			{
 				ID:           42,
 				ShopID:       100,
@@ -26,10 +29,10 @@ func TestGetExportReportJob_Success_Processing(t *testing.T) {
 				CreationTime: time.Now().UnixMilli(),
 				UpdateTime:   ptr(time.Now().UnixMilli()),
 			},
-		}, nil
-	}
+		}, nil).
+		AnyTimes()
 
-	uc, err := New(mockMySQL, defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	uc, err := New(mysql, mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), mocks.NewMockS3(ctrl), newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}
@@ -39,10 +42,9 @@ func TestGetExportReportJob_Success_Processing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Status != "processing" {
+	if result.Status != constant.ExportReportJobStatusProcessing {
 		t.Fatalf("expected status 'processing', got %s", result.Status)
 	}
-
 	if result.DownloadURL != "" {
 		t.Fatalf("expected empty download URL for processing job, got %s", result.DownloadURL)
 	}
@@ -50,9 +52,11 @@ func TestGetExportReportJob_Success_Processing(t *testing.T) {
 
 func TestGetExportReportJob_Success_Completed(t *testing.T) {
 	fileName := "report.csv"
-	mockMySQL := defaultMockMySQL()
-	mockMySQL.queryExportReportJob = func(_ context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{
 			{
 				ID:           42,
 				ShopID:       100,
@@ -64,10 +68,16 @@ func TestGetExportReportJob_Success_Completed(t *testing.T) {
 				CreationTime: time.Now().UnixMilli(),
 				UpdateTime:   ptr(time.Now().UnixMilli()),
 			},
-		}, nil
-	}
+		}, nil).
+		AnyTimes()
 
-	uc, err := New(mockMySQL, defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	s3 := mocks.NewMockS3(ctrl)
+	s3.EXPECT().
+		GeneratePresignedDownloadURL(gomock.Any(), gomock.Any()).
+		Return("https://s3.example.com/reports/report.csv?X-Amz-Signature=abc", nil).
+		AnyTimes()
+
+	uc, err := New(mysql, mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), s3, newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}
@@ -77,10 +87,9 @@ func TestGetExportReportJob_Success_Completed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Status != "success" {
+	if result.Status != constant.ExportReportJobStatusSuccess {
 		t.Fatalf("expected status 'success', got %s", result.Status)
 	}
-
 	if result.DownloadURL == "" {
 		t.Fatal("expected non-empty download URL for completed job")
 	}
@@ -88,9 +97,11 @@ func TestGetExportReportJob_Success_Completed(t *testing.T) {
 
 func TestGetExportReportJob_Success_Failed(t *testing.T) {
 	errMsg := "processing failed"
-	mockMySQL := defaultMockMySQL()
-	mockMySQL.queryExportReportJob = func(_ context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{
 			{
 				ID:           42,
 				ShopID:       100,
@@ -102,10 +113,10 @@ func TestGetExportReportJob_Success_Failed(t *testing.T) {
 				CreationTime: time.Now().UnixMilli(),
 				UpdateTime:   ptr(time.Now().UnixMilli()),
 			},
-		}, nil
-	}
+		}, nil).
+		AnyTimes()
 
-	uc, err := New(mockMySQL, defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	uc, err := New(mysql, mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), mocks.NewMockS3(ctrl), newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}
@@ -115,22 +126,23 @@ func TestGetExportReportJob_Success_Failed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Status != "failed" {
+	if result.Status != constant.ExportReportJobStatusFailed {
 		t.Fatalf("expected status 'failed', got %s", result.Status)
 	}
-
 	if result.ErrorMessage != "processing failed" {
 		t.Fatalf("expected error message 'processing failed', got %s", result.ErrorMessage)
 	}
 }
 
 func TestGetExportReportJob_JobNotFound(t *testing.T) {
-	mockMySQL := defaultMockMySQL()
-	mockMySQL.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{}, nil
-	}
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{}, nil).
+		AnyTimes()
 
-	uc, err := New(mockMySQL, defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	uc, err := New(mysql, mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), mocks.NewMockS3(ctrl), newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}
@@ -139,19 +151,20 @@ func TestGetExportReportJob_JobNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for job not found")
 	}
-
-	if errs.CodeFromError(err) != errs.NotFound {
+	if apperrors.CodeFromError(err) != apperrors.NotFound {
 		t.Fatalf("expected NotFound code, got: %v", err)
 	}
 }
 
 func TestGetExportReportJob_EmptyResult(t *testing.T) {
-	mockMySQL := defaultMockMySQL()
-	mockMySQL.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, nil
-	}
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return(nil, nil).
+		AnyTimes()
 
-	uc, err := New(mockMySQL, defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	uc, err := New(mysql, mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), mocks.NewMockS3(ctrl), newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}
@@ -163,7 +176,8 @@ func TestGetExportReportJob_EmptyResult(t *testing.T) {
 }
 
 func TestGetExportReportJob_InvalidJobID(t *testing.T) {
-	uc, err := New(defaultMockMySQL(), defaultMockMQ(), defaultMockRedis(), defaultMockS3(), newTestDynamicLoader(t))
+	ctrl := gomock.NewController(t)
+	uc, err := New(mocks.NewMockMySQL(ctrl), mocks.NewMockMQ(ctrl), mocks.NewMockRedis(ctrl), mocks.NewMockS3(ctrl), newTestDynamicLoader(t))
 	if err != nil {
 		t.Fatalf("failed to create use case: %v", err)
 	}

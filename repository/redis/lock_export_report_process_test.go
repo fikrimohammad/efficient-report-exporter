@@ -7,28 +7,38 @@ import (
 
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/mock/gomock"
 )
 
 func TestLockExportReportProcess_Success(t *testing.T) {
-	mock := newMockRedisClient()
+	mock := newMockRedisClient(t)
+	mock.EXPECT().
+		SetNX(gomock.Any(), "export_report_job:42", gomock.Any(), gomock.Any()).
+		Return(redis.NewBoolResult(true, nil))
+
 	repo := &repo{redisCli: mock}
 
-	err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
+	token, err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
 		JobID: 42,
 		TTL:   1 * time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if token == "" {
+		t.Fatal("expected a non-empty lock token")
+	}
 }
 
 func TestLockExportReportProcess_AlreadyLocked(t *testing.T) {
-	mock := newMockRedisClient()
+	mock := newMockRedisClient(t)
+	mock.EXPECT().
+		SetNX(gomock.Any(), "export_report_job:42", gomock.Any(), gomock.Any()).
+		Return(redis.NewBoolResult(false, nil))
+
 	repo := &repo{redisCli: mock}
 
-	mock.set("export_report_job:42", "1")
-
-	err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
+	_, err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
 		JobID: 42,
 		TTL:   1 * time.Minute,
 	})
@@ -38,11 +48,14 @@ func TestLockExportReportProcess_AlreadyLocked(t *testing.T) {
 }
 
 func TestLockExportReportProcess_RedisErrorOnSet(t *testing.T) {
-	mock := newMockRedisClient()
-	mock.setErr = redis.TxFailedErr
+	mock := newMockRedisClient(t)
+	mock.EXPECT().
+		SetNX(gomock.Any(), "export_report_job:42", gomock.Any(), gomock.Any()).
+		Return(redis.NewBoolResult(false, redis.TxFailedErr))
+
 	repo := &repo{redisCli: mock}
 
-	err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
+	_, err := repo.LockExportReportProcess(context.Background(), repository.LockExportReportProcess{
 		JobID: 42,
 		TTL:   1 * time.Minute,
 	})

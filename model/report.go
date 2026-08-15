@@ -2,12 +2,13 @@ package model
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 )
@@ -38,11 +39,11 @@ func (rfds *ReportFeeDetails) Scan(src any) error {
 		return errors.New("incompatible type for ReportFeeDetails")
 	}
 
-	return json.Unmarshal(source, rfds)
+	return sonic.Unmarshal(source, rfds)
 }
 
 func (rfds *ReportFeeDetails) Value() (driver.Value, error) {
-	return json.Marshal(rfds)
+	return sonic.Marshal(rfds)
 }
 
 type ReportFeeDetail struct {
@@ -58,9 +59,9 @@ type ReportFeeDetail struct {
 type ReportLine struct {
 	ShopID              int64
 	OrderID             int64
-	OrderCreationTime   time.Time `json:"order_creation_time"`
-	OrderPaymentTime    time.Time `json:"order_payment_time"`
-	OrderSettlementTime time.Time `json:"order_settlement_time"`
+	OrderCreationTime   time.Time
+	OrderPaymentTime    time.Time
+	OrderSettlementTime time.Time
 	FeeID               int64
 	ReportFeeDetail
 }
@@ -134,11 +135,11 @@ func (erje *ExportReportJobExtra) Scan(src any) error {
 		return errors.New("incompatible type for ExportReportJobExtra")
 	}
 
-	return json.Unmarshal(source, erje)
+	return sonic.Unmarshal(source, erje)
 }
 
 func (erje ExportReportJobExtra) Value() (driver.Value, error) {
-	return json.Marshal(erje)
+	return sonic.Marshal(erje)
 }
 
 type ExportReportProcessMessage struct {

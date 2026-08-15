@@ -6,21 +6,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"go.uber.org/mock/gomock"
 )
 
 func TestGetExportReportJob_Success_Processing(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 			return &usecase.GetExportReportJobResult{
 				JobID:        params.JobID,
 				Status:       "processing",
 				CreationTime: time.Now(),
 				UpdateTime:   time.Now(),
 			}, nil
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/42")
@@ -32,8 +36,10 @@ func TestGetExportReportJob_Success_Processing(t *testing.T) {
 }
 
 func TestGetExportReportJob_Success_Completed(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 			return &usecase.GetExportReportJobResult{
 				JobID:        params.JobID,
 				Status:       "success",
@@ -41,8 +47,8 @@ func TestGetExportReportJob_Success_Completed(t *testing.T) {
 				CreationTime: time.Now(),
 				UpdateTime:   time.Now(),
 			}, nil
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/42")
@@ -54,8 +60,10 @@ func TestGetExportReportJob_Success_Completed(t *testing.T) {
 }
 
 func TestGetExportReportJob_Success_Failed(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 			return &usecase.GetExportReportJobResult{
 				JobID:        params.JobID,
 				Status:       "failed",
@@ -63,8 +71,8 @@ func TestGetExportReportJob_Success_Failed(t *testing.T) {
 				CreationTime: time.Now(),
 				UpdateTime:   time.Now(),
 			}, nil
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/42")
@@ -76,7 +84,7 @@ func TestGetExportReportJob_Success_Failed(t *testing.T) {
 }
 
 func TestGetExportReportJob_InvalidJobID(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.get(t, "/v1/reports/export/abc")
 	ts.readBody(t, resp)
 
@@ -86,7 +94,7 @@ func TestGetExportReportJob_InvalidJobID(t *testing.T) {
 }
 
 func TestGetExportReportJob_ZeroJobID(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.get(t, "/v1/reports/export/0")
 	ts.readBody(t, resp)
 
@@ -96,11 +104,13 @@ func TestGetExportReportJob_ZeroJobID(t *testing.T) {
 }
 
 func TestGetExportReportJob_JobNotFound(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
-			return nil, errs.New(errs.NotFound, "job not found")
-		},
-	}
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+			return nil, errs.New(apperrors.NotFound, "job not found")
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/999")
@@ -112,11 +122,13 @@ func TestGetExportReportJob_JobNotFound(t *testing.T) {
 }
 
 func TestGetExportReportJob_InternalError(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 			return nil, errors.New("database connection failed")
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/1")
@@ -128,11 +140,13 @@ func TestGetExportReportJob_InternalError(t *testing.T) {
 }
 
 func TestGetExportReportJob_PresignError(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		getExportReportJob: func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		GetExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 			return nil, errors.New("generate download url: signing failed")
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.get(t, "/v1/reports/export/1")

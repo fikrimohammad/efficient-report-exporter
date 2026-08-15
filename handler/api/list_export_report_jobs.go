@@ -2,16 +2,16 @@ package api
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	apimodel "github.com/fikrimohammad/efficient-report-exporter/model/api"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
-
-const maxLimit = 100
 
 func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContext) {
 	var (
@@ -24,13 +24,13 @@ func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContex
 	defer func() {
 		if err != nil {
 			_ = c.Error(err)
-			code := errs.CodeFromError(err)
+			code := apperrors.CodeFromError(err)
 			msg := err.Error()
-			if code.HTTPStatus() >= 500 {
+			if apperrors.HTTPStatus(code) >= 500 {
 				msg = "internal server error"
 			}
 			c.JSON(
-				code.HTTPStatus(),
+				apperrors.HTTPStatus(code),
 				apimodel.ListExportReportJobsResponse{
 					Base: &apimodel.BaseResponse{
 						Code:    codeToString(code),
@@ -41,8 +41,8 @@ func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContex
 			return
 		}
 
-		c.JSON(200, apimodel.ListExportReportJobsResponse{
-			Base: &apimodel.BaseResponse{Code: codeToString(errs.OK), Message: "success"},
+		c.JSON(http.StatusOK, apimodel.ListExportReportJobsResponse{
+			Base: &apimodel.BaseResponse{Code: codeToString(apperrors.OK), Message: "success"},
 			Data: &apimodel.ListExportReportJobsData{
 				Jobs:          jobs,
 				NextPageToken: nextPageToken,
@@ -52,32 +52,32 @@ func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContex
 
 	shopIDStr := c.Query("shop_id")
 	if shopIDStr == "" {
-		err = errs.New(errs.InvalidArgument, "shop_id is required")
+		err = errs.New(apperrors.InvalidArgument, "shop_id is required")
 		return
 	}
 	if len(shopIDStr) > maxInputLength {
-		err = errs.New(errs.InvalidArgument, "shop_id exceeds max length")
+		err = errs.New(apperrors.InvalidArgument, "shop_id exceeds max length")
 		return
 	}
 	shopID, parseErr := strconv.ParseInt(shopIDStr, 10, 64)
 	if parseErr != nil {
-		err = errs.Wrap(errs.InvalidArgument, "invalid shop_id format", parseErr)
+		err = errs.Wrap(apperrors.InvalidArgument, "invalid shop_id format", parseErr)
 		return
 	}
 	if shopID <= 0 {
-		err = errs.New(errs.InvalidArgument, "shop_id must be positive")
+		err = errs.New(apperrors.InvalidArgument, "shop_id must be positive")
 		return
 	}
 
 	var pageToken int64
 	if pageTokenStr := c.Query("page_token"); pageTokenStr != "" {
 		if len(pageTokenStr) > maxInputLength {
-			err = errs.New(errs.InvalidArgument, "page_token exceeds max length")
+			err = errs.New(apperrors.InvalidArgument, "page_token exceeds max length")
 			return
 		}
 		pageToken, parseErr = strconv.ParseInt(pageTokenStr, 10, 64)
 		if parseErr != nil {
-			err = errs.Wrap(errs.InvalidArgument, "invalid page_token format", parseErr)
+			err = errs.Wrap(apperrors.InvalidArgument, "invalid page_token format", parseErr)
 			return
 		}
 	}
@@ -85,16 +85,16 @@ func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContex
 	var limit int
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if len(limitStr) > maxInputLength {
-			err = errs.New(errs.InvalidArgument, "limit exceeds max length")
+			err = errs.New(apperrors.InvalidArgument, "limit exceeds max length")
 			return
 		}
 		limitVal, parseErr := strconv.Atoi(limitStr)
 		if parseErr != nil {
-			err = errs.Wrap(errs.InvalidArgument, "invalid limit format", parseErr)
+			err = errs.Wrap(apperrors.InvalidArgument, "invalid limit format", parseErr)
 			return
 		}
-		if limitVal <= 0 || limitVal > maxLimit {
-			err = errs.New(errs.InvalidArgument, "limit must be between 1 and 100")
+		if limitVal <= 0 || limitVal > constant.MaxListExportReportJobsLimit {
+			err = errs.New(apperrors.InvalidArgument, "limit must be between 1 and 100")
 			return
 		}
 		limit = limitVal
@@ -113,11 +113,11 @@ func (h *Handler) ListExportReportJobs(ctx context.Context, c *app.RequestContex
 	for _, job := range result.Jobs {
 		jobs = append(jobs, &apimodel.ExportReportJobSummary{
 			JobID:     strconv.FormatInt(job.JobID, 10),
-			Status:    job.Status,
+			Status:    string(job.Status),
 			StartTime: job.StartTime.Format(constant.APITimeFormat),
 			EndTime:   job.EndTime.Format(constant.APITimeFormat),
 			CreatedAt: job.CreationTime.Format(constant.APITimeFormat),
-			UpdatedAt: job.UpdateTime.Format(constant.APITimeFormat),
+			UpdatedAt: formatAPITime(job.UpdateTime),
 		})
 	}
 

@@ -2,35 +2,38 @@ package api
 
 import (
 	"strconv"
+	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
+	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
-	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 type Handler struct {
 	reportUseCase usecase.Report
-	dynamicConfig *confloader.Loader[config.DynamicConfig]
 }
 
-func New(reportUseCase usecase.Report, dynamicConfig *confloader.Loader[config.DynamicConfig]) (*Handler, error) {
+func New(reportUseCase usecase.Report) (*Handler, error) {
 	if reportUseCase == nil {
-		return nil, errs.New(errs.Internal, "report use case is not initialized")
+		return nil, errs.New(apperrors.Internal, "report use case is not initialized")
 	}
 
 	return &Handler{
 		reportUseCase: reportUseCase,
-		dynamicConfig: dynamicConfig,
 	}, nil
 }
 
-// DynamicConfig returns the dynamic config loader.
-func (h *Handler) DynamicConfig() *confloader.Loader[config.DynamicConfig] {
-	return h.dynamicConfig
+// codeToString converts an apperrors.Code to its string representation for API responses.
+func codeToString(code apperrors.Code) string {
+	return strconv.Itoa(int(code))
 }
 
-// codeToString converts an errs.Code to its string representation for API responses.
-func codeToString(code errs.Code) string {
-	return strconv.Itoa(int(code))
+// formatAPITime renders a timestamp in the API format, returning an empty
+// string for the zero time (e.g. a job that has not been updated yet).
+func formatAPITime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(constant.APITimeFormat)
 }

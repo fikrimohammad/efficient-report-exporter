@@ -3,10 +3,13 @@ package report
 import (
 	"context"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
+	"github.com/fikrimohammad/efficient-report-exporter/config"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/go-dev-sdk/observability/logs"
 	"github.com/fikrimohammad/go-dev-sdk/observability/tracer"
@@ -14,32 +17,35 @@ import (
 
 // RequestExportReport is a use case that handles the request to export a report.
 func (u *useCase) RequestExportReport(ctx context.Context, params usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
-	rr := &reportRequester{
-		mySQLRepository: u.mySQLRepository,
+	r := &reportRequester{
+		mysqlRepository: u.mysqlRepository,
 		mqRepository:    u.mqRepository,
 		redisRepository: u.redisRepository,
+		dynamicConfig:   u.dynamicConfig,
 	}
 
-	return rr.Request(ctx, params)
+	return r.Request(ctx, params)
 }
 
 type reportRequester struct {
-	mySQLRepository repository.MySQL
+	mysqlRepository repository.MySQL
 	mqRepository    repository.MQ
 	redisRepository repository.Redis
+	dynamicConfig   *confloader.Loader[config.DynamicConfig]
 }
 
-func (rr *reportRequester) Request(ctx context.Context, params usecase.RequestExportReportParams) (result *usecase.RequestExportReportResult, err error) {
+func (r *reportRequester) Request(ctx context.Context, params usecase.RequestExportReportParams) (result *usecase.RequestExportReportResult, err error) {
 	if err = params.Validate(); err != nil {
 		return nil, err
 	}
 
-	if err = rr.lockRequest(ctx, params); err != nil {
+	var lockToken string
+	if lockToken, err = r.lockRequest(ctx, params); err != nil {
 		return nil, err
 	}
-	defer func() { _ = rr.unlockRequest(ctx, params) }()
+	defer func() { _ = r.unlockRequest(ctx, params, lockToken) }()
 
-	job, queryErr := rr.queryExportReportJob(ctx, params)
+	job, queryErr := r.queryExportReportJob(ctx, params)
 	if queryErr != nil {
 		err = queryErr
 		return nil, err
@@ -50,13 +56,21 @@ func (rr *reportRequester) Request(ctx context.Context, params usecase.RequestEx
 			logs.Info(ctx, "export job reused", jobLogAttrs(params, job.ID, tracer.TraceIDFrom(ctx))...)
 			return &usecase.RequestExportReportResult{JobID: job.ID}, nil
 		}
+
+		// A previously failed job is retried in place: reset it to processing
+		// before re-enqueueing so its status reflects the pending retry.
+		if resetErr := r.resetExportReportJob(ctx, job.ID); resetErr != nil {
+			err = resetErr
+			return nil, err
+		}
+		logs.Info(ctx, "export job retried", jobLogAttrs(params, job.ID, tracer.TraceIDFrom(ctx))...)
 	} else {
-		if checkErr := rr.checkReportDataExistence(ctx, params); checkErr != nil {
+		if checkErr := r.checkReportDataExistence(ctx, params); checkErr != nil {
 			err = checkErr
 			return nil, err
 		}
 
-		newJob, initErr := rr.initExportReportJob(ctx, params)
+		newJob, initErr := r.createExportReportJob(ctx, params)
 		if initErr != nil {
 			err = initErr
 			return nil, err
@@ -66,7 +80,7 @@ func (rr *reportRequester) Request(ctx context.Context, params usecase.RequestEx
 		logs.Info(ctx, "export job created", jobLogAttrs(params, job.ID, tracer.TraceIDFrom(ctx))...)
 	}
 
-	if startErr := rr.startExportReportJob(ctx, job); startErr != nil {
+	if startErr := r.publishExportReportProcessMsg(ctx, job); startErr != nil {
 		err = startErr
 		return nil, err
 	}
@@ -74,21 +88,23 @@ func (rr *reportRequester) Request(ctx context.Context, params usecase.RequestEx
 	return &usecase.RequestExportReportResult{JobID: job.ID}, nil
 }
 
-func (rr *reportRequester) lockRequest(ctx context.Context, params usecase.RequestExportReportParams) error {
-	return rr.redisRepository.LockExportReportRequest(ctx, repository.LockExportReportRequest{
+func (r *reportRequester) lockRequest(ctx context.Context, params usecase.RequestExportReportParams) (string, error) {
+	lockTTL := r.dynamicConfig.Data().RequestLockTTL.GetWithDefault(ctx, constant.DefaultRequestLockTTL)
+	return r.redisRepository.LockExportReportRequest(ctx, repository.LockExportReportRequest{
 		RequestID: params.RequestID,
-		TTL:       constant.DefaultRequestLockTTL,
+		TTL:       lockTTL,
 	})
 }
 
-func (rr *reportRequester) unlockRequest(ctx context.Context, params usecase.RequestExportReportParams) error {
-	return rr.redisRepository.UnlockExportReportRequest(ctx, repository.UnlockExportReportRequest{
+func (r *reportRequester) unlockRequest(ctx context.Context, params usecase.RequestExportReportParams, token string) error {
+	return r.redisRepository.UnlockExportReportRequest(ctx, repository.UnlockExportReportRequest{
 		RequestID: params.RequestID,
+		Token:     token,
 	})
 }
 
-func (rr *reportRequester) queryExportReportJob(ctx context.Context, params usecase.RequestExportReportParams) (*model.ExportReportJob, error) {
-	jobs, err := rr.mySQLRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
+func (r *reportRequester) queryExportReportJob(ctx context.Context, params usecase.RequestExportReportParams) (*model.ExportReportJob, error) {
+	jobs, err := r.mysqlRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
 		RequestID: params.RequestID,
 	})
 	if err != nil {
@@ -102,28 +118,28 @@ func (rr *reportRequester) queryExportReportJob(ctx context.Context, params usec
 	return jobs[0], nil
 }
 
-func (rr *reportRequester) checkReportDataExistence(ctx context.Context, params usecase.RequestExportReportParams) error {
-	reports, err := rr.mySQLRepository.QueryReport(ctx, repository.QueryReportFilter{
+func (r *reportRequester) checkReportDataExistence(ctx context.Context, params usecase.RequestExportReportParams) error {
+	reports, err := r.mysqlRepository.QueryReport(ctx, repository.QueryReportFilter{
 		ShopID: &params.ShopID,
 		OrderSettlementTimeRange: &repository.QueryReportTimeRange{
 			StartTime: &params.StartTime,
 			EndTime:   &params.EndTime,
 		},
-		Limit: constant.SingleRowQueryLimit,
+		Limit: constant.QueryLimitOne,
 	})
 	if err != nil {
 		return err
 	}
 
 	if len(reports) == 0 {
-		return errs.New(errs.NotFound, "report data not found")
+		return errs.New(apperrors.NotFound, "report data not found")
 	}
 
 	return nil
 }
 
-func (rr *reportRequester) initExportReportJob(ctx context.Context, params usecase.RequestExportReportParams) (*model.ExportReportJob, error) {
-	job, err := rr.mySQLRepository.InsertExportReportJob(ctx, repository.InsertExportReportJobParams{
+func (r *reportRequester) createExportReportJob(ctx context.Context, params usecase.RequestExportReportParams) (*model.ExportReportJob, error) {
+	job, err := r.mysqlRepository.InsertExportReportJob(ctx, repository.InsertExportReportJobParams{
 		ShopID:    params.ShopID,
 		RequestID: params.RequestID,
 		StartTime: params.StartTime.UnixMilli(),
@@ -138,8 +154,16 @@ func (rr *reportRequester) initExportReportJob(ctx context.Context, params useca
 	return job, nil
 }
 
-func (rr *reportRequester) startExportReportJob(ctx context.Context, job *model.ExportReportJob) error {
-	err := rr.mqRepository.PublishExportReportProcessMsg(
+func (r *reportRequester) resetExportReportJob(ctx context.Context, jobID int64) error {
+	return r.mysqlRepository.UpdateExportReportJob(ctx, repository.UpdateExportReportJobParams{
+		JobID:  jobID,
+		Status: constant.ExportReportJobStatusProcessing,
+		Extra:  model.ExportReportJobExtra{},
+	})
+}
+
+func (r *reportRequester) publishExportReportProcessMsg(ctx context.Context, job *model.ExportReportJob) error {
+	err := r.mqRepository.PublishExportReportProcessMsg(
 		ctx,
 		model.ExportReportProcessMessage{
 			JobID: job.ID,

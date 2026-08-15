@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -73,10 +72,14 @@ func TestBuildReportQuery(t *testing.T) {
 		{
 			name: "cursor pagination",
 			filter: repository.QueryReportFilter{
-				LastReportID: 500,
-				Limit:        100,
+				LastOrderSettlementTime: &now,
+				LastReportID:            500,
+				Limit:                   100,
 			},
 			check: func(t *testing.T, query string) {
+				if !strings.Contains(query, "order_settlement_time > :last_order_settlement_time") {
+					t.Fatal("cursor pagination should use order_settlement_time > :last_order_settlement_time")
+				}
 				if !strings.Contains(query, "id > :last_report_id") {
 					t.Fatal("cursor pagination should use id > :last_report_id")
 				}
@@ -89,8 +92,9 @@ func TestBuildReportQuery(t *testing.T) {
 				OrderSettlementTimeRange: &repository.QueryReportTimeRange{
 					StartTime: &now,
 				},
-				LastReportID: 999,
-				Limit:        50,
+				LastOrderSettlementTime: &now,
+				LastReportID:            999,
+				Limit:                   50,
 			},
 			check: func(t *testing.T, query string) {
 				if !strings.Contains(query, "shop_id = :shop_id") {
@@ -102,8 +106,8 @@ func TestBuildReportQuery(t *testing.T) {
 				if !strings.Contains(query, "id > :last_report_id") {
 					t.Fatal("should filter by id > :last_report_id")
 				}
-				if !strings.Contains(query, "ORDER BY id ASC") {
-					t.Fatal("should order by id ASC for keyset pagination")
+				if !strings.Contains(query, "ORDER BY order_settlement_time ASC, id ASC") {
+					t.Fatal("should order by order_settlement_time, id for keyset pagination")
 				}
 			},
 		},
@@ -113,7 +117,7 @@ func TestBuildReportQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			query, _ := r.buildReportQuery(context.Background(), tt.filter)
+			query, _ := r.buildReportQuery(tt.filter)
 			tt.check(t, query)
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bytedance/sonic"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
@@ -13,7 +14,7 @@ import (
 func (r *repo) PublishExportReportDoneMsg(ctx context.Context, msg model.ExportReportDoneMessage) error {
 	msgJSON, err := sonic.Marshal(msg)
 	if err != nil {
-		return errs.Wrap(errs.MQInternal, "marshal done message", err)
+		return errs.Wrap(apperrors.MQInternal, "marshal done message", err)
 	}
 
 	err = r.producer.PublishSync(
@@ -24,7 +25,7 @@ func (r *repo) PublishExportReportDoneMsg(ctx context.Context, msg model.ExportR
 		msgJSON,
 	)
 	if err != nil {
-		return errs.Wrap(errs.MQInternal, "publish done message", err)
+		return errs.Wrap(apperrors.MQInternal, "publish done message", err)
 	}
 
 	return nil

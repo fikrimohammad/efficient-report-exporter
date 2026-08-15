@@ -10,39 +10,18 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"go.uber.org/mock/gomock"
 )
-
-type mockReportUseCase struct {
-	requestExportReport  func(ctx context.Context, params usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error)
-	processExportReport  func(ctx context.Context, params usecase.ProcessExportReportParams) error
-	getExportReportJob   func(ctx context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error)
-	listExportReportJobs func(ctx context.Context, params usecase.ListExportReportJobsParams) (*usecase.ListExportReportJobsResult, error)
-}
-
-func (m *mockReportUseCase) RequestExportReport(ctx context.Context, params usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
-	return m.requestExportReport(ctx, params)
-}
-
-func (m *mockReportUseCase) ProcessExportReport(ctx context.Context, params usecase.ProcessExportReportParams) error {
-	return m.processExportReport(ctx, params)
-}
-
-func (m *mockReportUseCase) GetExportReportJob(ctx context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
-	return m.getExportReportJob(ctx, params)
-}
-
-func (m *mockReportUseCase) ListExportReportJobs(ctx context.Context, params usecase.ListExportReportJobsParams) (*usecase.ListExportReportJobsResult, error) {
-	return m.listExportReportJobs(ctx, params)
-}
 
 type testServer struct {
 	addr   string
 	engine *server.Hertz
 }
 
-func setupTest(t *testing.T, mock *mockReportUseCase) *testServer {
+func setupTest(t *testing.T, mock *mocks.MockReport) *testServer {
 	t.Helper()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -50,7 +29,7 @@ func setupTest(t *testing.T, mock *mockReportUseCase) *testServer {
 		t.Fatalf("failed to create listener: %v", err)
 	}
 
-	h := &Handler{reportUseCase: mock, dynamicConfig: nil}
+	h := &Handler{reportUseCase: mock}
 	engine := server.New(server.WithListener(ln), server.WithExitWaitTime(10*time.Millisecond))
 	engine.POST("/v1/reports/export", h.RequestExportReport)
 	engine.GET("/v1/reports/export/:job_id", h.GetExportReportJob)
@@ -71,6 +50,11 @@ func setupTest(t *testing.T, mock *mockReportUseCase) *testServer {
 	})
 
 	return ts
+}
+
+func newMockReport(t *testing.T) *mocks.MockReport {
+	t.Helper()
+	return mocks.NewMockReport(gomock.NewController(t))
 }
 
 func (ts *testServer) post(t *testing.T, path, body string) *http.Response {
@@ -111,7 +95,7 @@ func (ts *testServer) readBody(t *testing.T, resp *http.Response) string {
 }
 
 func TestNewHandler_NilUseCase(t *testing.T) {
-	_, err := New(nil, nil)
+	_, err := New(nil)
 	if err == nil {
 		t.Fatal("expected error for nil use case")
 	}
@@ -120,7 +104,7 @@ func TestNewHandler_NilUseCase(t *testing.T) {
 	if !errs.As(err, &e) {
 		t.Fatalf("expected *errs.Error, got %T", err)
 	}
-	if e.Code() != errs.Internal {
+	if e.Code() != apperrors.Internal {
 		t.Errorf("expected code Internal, got %v", e.Code())
 	}
 }

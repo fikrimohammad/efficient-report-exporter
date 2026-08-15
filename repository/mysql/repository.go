@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/db"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
@@ -12,7 +13,7 @@ type repo struct {
 
 func New(db db.DB) (repository.MySQL, error) {
 	if db == nil {
-		return nil, errs.New(errs.Internal, "database connection is not initialized")
+		return nil, errs.New(apperrors.Internal, "database connection is not initialized")
 	}
 
 	return &repo{db}, nil

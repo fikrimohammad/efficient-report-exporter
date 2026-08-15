@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ func TestBuildCountReportQuery(t *testing.T) {
 	start := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2025, 6, 2, 0, 0, 0, 0, time.UTC)
 
-	query, args := r.buildCountReportQuery(context.Background(), repository.QueryReportFilter{
+	query, args := r.buildCountReportQuery(repository.QueryReportFilter{
 		ShopID: &shopID,
 		OrderSettlementTimeRange: &repository.QueryReportTimeRange{
 			StartTime: &start,
@@ -37,7 +36,7 @@ func TestBuildCountReportQuery(t *testing.T) {
 		t.Fatalf("expected shop_id arg %d, got %v", shopID, args["shop_id"])
 	}
 
-	noFilterQuery, noFilterArgs := r.buildCountReportQuery(context.Background(), repository.QueryReportFilter{})
+	noFilterQuery, noFilterArgs := r.buildCountReportQuery(repository.QueryReportFilter{})
 	if strings.Contains(noFilterQuery, "WHERE") {
 		t.Fatal("no filters should not have WHERE clause")
 	}

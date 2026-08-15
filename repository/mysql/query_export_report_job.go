@@ -5,30 +5,27 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 )
 
 func (r *repo) QueryExportReportJob(ctx context.Context, filter repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-	query, args := r.buildExportReportJobQuery(ctx, filter)
+	query, args := r.buildExportReportJobQuery(filter)
 
 	var reportJobs []*model.ExportReportJob
 	if err := r.db.NamedSelectContext(ctx, &reportJobs, query, args); err != nil {
-		err = errs.Wrap(errs.DBInternal, "query export report job", err)
+		err = errs.Wrap(apperrors.DBInternal, "query export report job", err)
 		return nil, err
 	}
 
 	return reportJobs, nil
 }
 
-func (r *repo) buildExportReportJobQuery(_ context.Context, filter repository.QueryExportReportJobFilter) (string, map[string]interface{}) {
-	var (
-		conditionsQuery = make([]string, 0)
-		limitQuery      string
-		queryArgsMap    = make(map[string]interface{})
-		baseQuery       = selectExportReportJobsQuery
-	)
+func (r *repo) buildExportReportJobQuery(filter repository.QueryExportReportJobFilter) (string, map[string]any) {
+	conditionsQuery := make([]string, 0)
+	queryArgsMap := make(map[string]any)
 
 	if filter.JobID > 0 {
 		conditionsQuery = append(conditionsQuery, "id = :job_id")
@@ -50,21 +47,17 @@ func (r *repo) buildExportReportJobQuery(_ context.Context, filter repository.Qu
 		queryArgsMap["last_export_report_job_id"] = filter.LastExportReportJobID
 	}
 
-	limitQuery = " LIMIT :limit"
-	queryArgsMap["limit"] = repository.MaxQueryReportLimit
-	if filter.Limit > 0 && filter.Limit <= repository.MaxQueryReportLimit {
-		limitQuery = " LIMIT :limit"
-		queryArgsMap["limit"] = filter.Limit
+	limit := filter.Limit
+	if limit <= 0 || limit > repository.MaxQueryReportLimit {
+		limit = repository.MaxQueryReportLimit
 	}
+	queryArgsMap["limit"] = limit
 
-	if len(conditionsQuery) == 0 {
-		return baseQuery, nil
+	baseQuery := selectExportReportJobsQuery
+	if len(conditionsQuery) > 0 {
+		baseQuery += fmt.Sprintf("\nWHERE %s", strings.Join(conditionsQuery, " AND "))
 	}
-
-	baseQuery = baseQuery +
-		fmt.Sprintf("\nWHERE %s", strings.Join(conditionsQuery, " AND ")) +
-		" ORDER BY id" +
-		limitQuery
+	baseQuery += " ORDER BY id LIMIT :limit"
 
 	return baseQuery, queryArgsMap
 }

@@ -201,6 +201,8 @@ func (r *Resource) initIDGenerator() error {
 	}
 	h := fnv.New32a()
 	h.Write([]byte(hostname))
+	// Snowflake reserves 10 bits for the machine ID, so shift the 32-bit
+	// hostname hash right by 22 to keep only those 10 bits (values 0..1023).
 	snowflake.SetMachineID(uint16(h.Sum32() >> 22))
 	snowflake.SetStartTime(constant.SnowflakeEpoch)
 	return nil

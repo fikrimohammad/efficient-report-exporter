@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
@@ -12,7 +13,7 @@ import (
 
 func (u *useCase) ListExportReportJobs(ctx context.Context, params usecase.ListExportReportJobsParams) (*usecase.ListExportReportJobsResult, error) {
 	if params.ShopID == 0 {
-		return nil, errs.New(errs.InvalidArgument, "shop_id is required")
+		return nil, errs.New(apperrors.InvalidArgument, "shop_id is required")
 	}
 
 	limit := params.Limit
@@ -23,7 +24,7 @@ func (u *useCase) ListExportReportJobs(ctx context.Context, params usecase.ListE
 		limit = constant.MaxListExportReportJobsLimit
 	}
 
-	jobs, err := u.mySQLRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
+	jobs, err := u.mysqlRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
 		ShopID:                params.ShopID,
 		Limit:                 limit + 1,
 		LastExportReportJobID: params.PageToken,
@@ -49,7 +50,7 @@ func (u *useCase) ListExportReportJobs(ctx context.Context, params usecase.ListE
 
 		result.Jobs = append(result.Jobs, usecase.ExportReportJobSummary{
 			JobID:        job.ID,
-			Status:       string(job.Status),
+			Status:       job.Status,
 			StartTime:    time.UnixMilli(job.StartTime),
 			EndTime:      time.UnixMilli(job.EndTime),
 			CreationTime: time.UnixMilli(job.CreationTime),

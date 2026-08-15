@@ -7,44 +7,50 @@ import (
 	"time"
 
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"go.uber.org/mock/gomock"
 )
 
 func TestRequestExportReport_CreatesNewJob(t *testing.T) {
-	mysql := defaultMockMySQL()
-	mq := defaultMockMQ()
-	redis := defaultMockRedis()
-	s3 := defaultMockS3()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mq := mocks.NewMockMQ(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().QueryExportReportJob(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	mysql.EXPECT().QueryReport(gomock.Any(), gomock.Any()).Return([]*model.Report{{ID: 1}}, nil).AnyTimes()
+
+	var insertedParams repository.InsertExportReportJobParams
+	mysql.EXPECT().
+		InsertExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params repository.InsertExportReportJobParams) (*model.ExportReportJob, error) {
+			insertedParams = params
+			return &model.ExportReportJob{ID: 42, Status: constant.ExportReportJobStatusProcessing}, nil
+		}).
+		AnyTimes()
+
+	var publishedMsg model.ExportReportProcessMessage
+	mq.EXPECT().
+		PublishExportReportProcessMsg(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, msg model.ExportReportProcessMessage) error {
+			publishedMsg = msg
+			return nil
+		}).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
 	mu := &useCase{
-		mySQLRepository: mysql,
+		mysqlRepository: mysql,
 		mqRepository:    mq,
 		redisRepository: redis,
-		s3Repository:    s3,
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
-	}
-
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return []*model.Report{{ID: 1}}, nil
-	}
-
-	var insertedParams repository.InsertExportReportJobParams
-	mysql.insertExportReportJob = func(_ context.Context, params repository.InsertExportReportJobParams) (*model.ExportReportJob, error) {
-		insertedParams = params
-		return &model.ExportReportJob{ID: 42, Status: constant.ExportReportJobStatusProcessing}, nil
-	}
-
-	var publishedMsg model.ExportReportProcessMessage
-	mq.publishProcessMsg = func(_ context.Context, msg model.ExportReportProcessMessage) error {
-		publishedMsg = msg
-		return nil
 	}
 
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -72,30 +78,25 @@ func TestRequestExportReport_CreatesNewJob(t *testing.T) {
 }
 
 func TestRequestExportReport_ExistingJobAlreadySuccess(t *testing.T) {
-	mysql := defaultMockMySQL()
-	mq := defaultMockMQ()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mq := mocks.NewMockMQ(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{{ID: 99, Status: constant.ExportReportJobStatusSuccess}}, nil).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{{ID: 99, Status: constant.ExportReportJobStatusSuccess}}, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return []*model.Report{{ID: 1}}, nil
-	}
-
-	var published bool
-	mq.publishProcessMsg = func(_ context.Context, _ model.ExportReportProcessMessage) error {
-		published = true
-		return nil
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
+		mysqlRepository: mysql,
 		mqRepository:    mq,
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -112,36 +113,28 @@ func TestRequestExportReport_ExistingJobAlreadySuccess(t *testing.T) {
 	if result.JobID != 99 {
 		t.Fatalf("expected JobID 99 for existing success job, got %d", result.JobID)
 	}
-	if published {
-		t.Fatal("should not publish process message for already-successful job")
-	}
 }
 
 func TestRequestExportReport_ExistingJobProcessing(t *testing.T) {
-	mysql := defaultMockMySQL()
-	mq := defaultMockMQ()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mq := mocks.NewMockMQ(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return([]*model.ExportReportJob{{ID: 55, Status: constant.ExportReportJobStatusProcessing}}, nil).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return []*model.ExportReportJob{{ID: 55, Status: constant.ExportReportJobStatusProcessing}}, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return []*model.Report{{ID: 1}}, nil
-	}
-
-	var publishedProcess bool
-	mq.publishProcessMsg = func(_ context.Context, _ model.ExportReportProcessMessage) error {
-		publishedProcess = true
-		return nil
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
+		mysqlRepository: mysql,
 		mqRepository:    mq,
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -158,9 +151,6 @@ func TestRequestExportReport_ExistingJobProcessing(t *testing.T) {
 	if result.JobID != 55 {
 		t.Fatalf("expected JobID 55, got %d", result.JobID)
 	}
-	if publishedProcess {
-		t.Fatal("should not publish process message for already-processing job")
-	}
 }
 
 func TestRequestExportReport_ValidationError(t *testing.T) {
@@ -176,21 +166,21 @@ func TestRequestExportReport_ValidationError(t *testing.T) {
 }
 
 func TestRequestExportReport_LockAlreadyHeld(t *testing.T) {
-	mysql := defaultMockMySQL()
-	mq := defaultMockMQ()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	redis := mocks.NewMockRedis(ctrl)
+	redis.EXPECT().
+		LockExportReportRequest(gomock.Any(), gomock.Any()).
+		Return("", errors.New("lock is already locked")).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	redis.lockRequestFn = func(_ context.Context, _ repository.LockExportReportRequest) error {
-		return errors.New("lock is already locked")
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
-		mqRepository:    mq,
+		mysqlRepository: mocks.NewMockMySQL(ctrl),
+		mqRepository:    mocks.NewMockMQ(ctrl),
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -207,23 +197,22 @@ func TestRequestExportReport_LockAlreadyHeld(t *testing.T) {
 }
 
 func TestRequestExportReport_NoReportData(t *testing.T) {
-	mysql := defaultMockMySQL()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().QueryExportReportJob(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	mysql.EXPECT().QueryReport(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return nil, nil // no data
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
-		mqRepository:    defaultMockMQ(),
+		mysqlRepository: mysql,
+		mqRepository:    mocks.NewMockMQ(ctrl),
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -240,20 +229,21 @@ func TestRequestExportReport_NoReportData(t *testing.T) {
 }
 
 func TestRequestExportReport_LockError(t *testing.T) {
-	mysql := defaultMockMySQL()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	redis := mocks.NewMockRedis(ctrl)
+	redis.EXPECT().
+		LockExportReportRequest(gomock.Any(), gomock.Any()).
+		Return("", errors.New("redis down")).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	redis.lockRequestFn = func(_ context.Context, _ repository.LockExportReportRequest) error {
-		return errors.New("redis down")
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
-		mqRepository:    defaultMockMQ(),
+		mysqlRepository: mocks.NewMockMySQL(ctrl),
+		mqRepository:    mocks.NewMockMQ(ctrl),
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -270,20 +260,24 @@ func TestRequestExportReport_LockError(t *testing.T) {
 }
 
 func TestRequestExportReport_JobQueryError(t *testing.T) {
-	mysql := defaultMockMySQL()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().
+		QueryExportReportJob(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("db error")).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, errors.New("db error")
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
-		mqRepository:    defaultMockMQ(),
+		mysqlRepository: mysql,
+		mqRepository:    mocks.NewMockMQ(ctrl),
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -300,23 +294,22 @@ func TestRequestExportReport_JobQueryError(t *testing.T) {
 }
 
 func TestRequestExportReport_DataExistanceQueryError(t *testing.T) {
-	mysql := defaultMockMySQL()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().QueryExportReportJob(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	mysql.EXPECT().QueryReport(gomock.Any(), gomock.Any()).Return(nil, errors.New("db error on data check")).AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return nil, errors.New("db error on data check")
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
-		mqRepository:    defaultMockMQ(),
+		mysqlRepository: mysql,
+		mqRepository:    mocks.NewMockMQ(ctrl),
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 
@@ -333,31 +326,32 @@ func TestRequestExportReport_DataExistanceQueryError(t *testing.T) {
 }
 
 func TestRequestExportReport_PublishProcessMsgError(t *testing.T) {
-	mysql := defaultMockMySQL()
-	mq := defaultMockMQ()
-	redis := defaultMockRedis()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	mq := mocks.NewMockMQ(ctrl)
+	redis := mocks.NewMockRedis(ctrl)
+	allowRedisLocks(redis)
+
+	mysql.EXPECT().QueryExportReportJob(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	mysql.EXPECT().QueryReport(gomock.Any(), gomock.Any()).Return([]*model.Report{{ID: 1}}, nil).AnyTimes()
+	mysql.EXPECT().
+		InsertExportReportJob(gomock.Any(), gomock.Any()).
+		Return(&model.ExportReportJob{ID: 42, Status: constant.ExportReportJobStatusProcessing}, nil).
+		AnyTimes()
+
+	mq.EXPECT().
+		PublishExportReportProcessMsg(gomock.Any(), gomock.Any()).
+		Return(errors.New("mq publish error")).
+		AnyTimes()
+
 	dl := newTestDynamicLoader(t)
 	defer func() { _ = dl.Stop() }()
 
-	mysql.queryExportReportJob = func(_ context.Context, _ repository.QueryExportReportJobFilter) ([]*model.ExportReportJob, error) {
-		return nil, nil
-	}
-	mysql.queryReportFn = func(_ context.Context, _ repository.QueryReportFilter) ([]*model.Report, error) {
-		return []*model.Report{{ID: 1}}, nil
-	}
-	mysql.insertExportReportJob = func(_ context.Context, _ repository.InsertExportReportJobParams) (*model.ExportReportJob, error) {
-		return &model.ExportReportJob{ID: 42, Status: constant.ExportReportJobStatusProcessing}, nil
-	}
-
-	mq.publishProcessMsg = func(_ context.Context, _ model.ExportReportProcessMessage) error {
-		return errors.New("mq publish error")
-	}
-
 	mu := &useCase{
-		mySQLRepository: mysql,
+		mysqlRepository: mysql,
 		mqRepository:    mq,
 		redisRepository: redis,
-		s3Repository:    defaultMockS3(),
+		s3Repository:    mocks.NewMockS3(ctrl),
 		dynamicConfig:   dl,
 	}
 

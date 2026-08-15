@@ -15,7 +15,10 @@ type QueryReportFilter struct {
 	ShopID                   *int64                `json:"shop_id"`
 	OrderSettlementTimeRange *QueryReportTimeRange `json:"order_settlement_time_range"`
 	Limit                    int                   `json:"limit"`
-	LastReportID             int64                 `json:"last_report_id"`
+	// Keyset cursor over the (order_settlement_time, id) index prefix. Set both
+	// together (or neither) to page without OFFSET.
+	LastOrderSettlementTime *time.Time `json:"last_order_settlement_time"`
+	LastReportID            int64      `json:"last_report_id"`
 }
 
 type QueryReportTimeRange struct {
@@ -65,7 +68,8 @@ type LockExportReportRequest struct {
 }
 
 type UnlockExportReportRequest struct {
-	RequestID int64 `json:"request_id"`
+	RequestID int64  `json:"request_id"`
+	Token     string `json:"token"`
 }
 
 type LockExportReportProcess struct {
@@ -74,13 +78,17 @@ type LockExportReportProcess struct {
 }
 
 type UnlockExportReportProcess struct {
-	JobID int64 `json:"job_id"`
+	JobID int64  `json:"job_id"`
+	Token string `json:"token"`
 }
 
+// ReportRedis defines the lock operations used by the report use cases. Lock
+// methods return an ownership token that must be supplied to the matching
+// Unlock method, so a consumer can only release a lock it still owns.
 type ReportRedis interface {
-	LockExportReportProcess(ctx context.Context, params LockExportReportProcess) error
+	LockExportReportProcess(ctx context.Context, params LockExportReportProcess) (string, error)
 	UnlockExportReportProcess(ctx context.Context, params UnlockExportReportProcess) error
-	LockExportReportRequest(ctx context.Context, params LockExportReportRequest) error
+	LockExportReportRequest(ctx context.Context, params LockExportReportRequest) (string, error)
 	UnlockExportReportRequest(ctx context.Context, params UnlockExportReportRequest) error
 }
 
