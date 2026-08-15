@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -27,6 +28,8 @@ import (
 	s3repository "github.com/fikrimohammad/efficient-report-exporter/repository/s3"
 	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/db"
+	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
+	rocketmqconsumer "github.com/fikrimohammad/go-dev-sdk/rocketmq/consumer"
 	commons3 "github.com/fikrimohammad/go-dev-sdk/s3"
 	"go.uber.org/mock/gomock"
 )
@@ -51,7 +54,7 @@ func benchShopIDFor(n int) int64 {
 
 // deps bundles the real connections a test needs.
 type deps struct {
-	cfg       *config.AppConfig
+	infra     testInfra
 	dbClient  db.DB
 	s3Client  commons3.Client
 	rawDB     *sql.DB
@@ -59,12 +62,30 @@ type deps struct {
 	s3Repo    repository.S3
 }
 
-// setupDeps loads the app config (file + Infisical secrets + etcd dynamic
-// config), connects to MySQL and S3, provisions the report bucket, and returns
-// the wired repositories plus a raw *sql.DB for seeding.
-func setupDeps(t testing.TB) *deps {
+// testInfra holds the connection settings for the test infrastructure, resolved
+// either from environment variables (CI) or the app's config loader (local).
+type testInfra struct {
+	db      db.Config
+	s3      commons3.Config
+	redis   commonredis.Config
+	mq      rocketmqconsumer.Config
+	namesrv []string
+}
+
+// loadTestInfra resolves the infrastructure settings. When TEST_DB_HOST is set
+// (CI, backed by docker-compose), settings come from environment variables so
+// the tests don't need Infisical/etcd; otherwise the app's config loader is
+// used, as in local development.
+func loadTestInfra(t testing.TB) testInfra {
 	t.Helper()
-	ctx := context.Background()
+	if os.Getenv("TEST_DB_HOST") != "" {
+		return envTestInfra()
+	}
+	return configTestInfra(t)
+}
+
+func configTestInfra(t testing.TB) testInfra {
+	t.Helper()
 
 	root := repoRoot()
 	if root == "" {
@@ -75,23 +96,90 @@ func setupDeps(t testing.TB) *deps {
 		_ = os.Setenv("CONFIG_PATH", filepath.Join(root, "config", "config.development.yaml"))
 	}
 
-	cfg, err := config.Load(ctx)
+	cfg, err := config.Load(context.Background())
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	t.Cleanup(func() { _ = cfg.Dynamic.Stop() })
 
-	dbClient, err := db.Connect(cfg.DB)
+	namesrv := []string{"127.0.0.1:9876"}
+	if len(cfg.MQConsumers) > 0 {
+		namesrv = cfg.MQConsumers[0].Endpoints
+	}
+
+	return testInfra{
+		db:      cfg.DB,
+		s3:      cfg.S3,
+		redis:   cfg.Redis,
+		mq:      cfg.MQConsumers[0],
+		namesrv: namesrv,
+	}
+}
+
+func envTestInfra() testInfra {
+	namesrv := []string{getenv("TEST_MQ_NAMESRV", "127.0.0.1:9876")}
+
+	return testInfra{
+		db: db.Config{
+			Driver:   "mysql",
+			Host:     getenv("TEST_DB_HOST", "127.0.0.1"),
+			Port:     atoi(getenv("TEST_DB_PORT", "3306")),
+			Database: getenv("TEST_DB_NAME", "efficient_report_exporter"),
+			Username: getenv("TEST_DB_USER", "root"),
+			Password: getenv("TEST_DB_PASSWORD", "root"),
+		},
+		s3: commons3.Config{
+			Region:          getenv("TEST_S3_REGION", "us-east-1"),
+			Endpoint:        getenv("TEST_S3_ENDPOINT", "http://127.0.0.1:9000"),
+			AccessKeyID:     getenv("TEST_S3_ACCESS_KEY", "minioadmin"),
+			SecretAccessKey: getenv("TEST_S3_SECRET_KEY", "minioadmin"),
+		},
+		redis: commonredis.Config{
+			Host: getenv("TEST_REDIS_HOST", "127.0.0.1"),
+			Port: atoi(getenv("TEST_REDIS_PORT", "6379")),
+		},
+		mq: rocketmqconsumer.Config{
+			Endpoints:        namesrv,
+			Topic:            string(constant.MQTopicReporting),
+			Group:            getenv("TEST_MQ_GROUP", "e2e_export_report_consumer"),
+			Tags:             []string{string(constant.MQMsgTagExportReportProcess)},
+			ConsumeFromWhere: rocketmqconsumer.ConsumeFromLast,
+		},
+		namesrv: namesrv,
+	}
+}
+
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func atoi(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
+}
+
+// setupDeps connects to MySQL and S3, provisions the report bucket, and returns
+// the wired repositories plus a raw *sql.DB for seeding.
+func setupDeps(t testing.TB) *deps {
+	t.Helper()
+	ctx := context.Background()
+
+	infra := loadTestInfra(t)
+
+	dbClient, err := db.Connect(infra.db)
 	if err != nil {
 		t.Fatalf("connect db: %v", err)
 	}
 	t.Cleanup(func() { _ = dbClient.Close() })
 
-	s3Client, err := commons3.New(cfg.S3)
+	s3Client, err := commons3.New(infra.s3)
 	if err != nil {
 		t.Fatalf("init s3: %v", err)
 	}
-	if err := ensureBucket(ctx, cfg.S3); err != nil {
+	if err := ensureBucket(ctx, infra.s3); err != nil {
 		t.Fatalf("ensure bucket: %v", err)
 	}
 
@@ -104,7 +192,7 @@ func setupDeps(t testing.TB) *deps {
 		t.Fatalf("s3 repo: %v", err)
 	}
 
-	rawDB, err := sql.Open("mysql", dbDSN(cfg.DB))
+	rawDB, err := sql.Open("mysql", dbDSN(infra.db))
 	if err != nil {
 		t.Fatalf("open raw db: %v", err)
 	}
@@ -114,7 +202,7 @@ func setupDeps(t testing.TB) *deps {
 	}
 
 	return &deps{
-		cfg:       cfg,
+		infra:     infra,
 		dbClient:  dbClient,
 		s3Client:  s3Client,
 		rawDB:     rawDB,

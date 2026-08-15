@@ -1,0 +1,75 @@
+# Local + CI development stack for the integration tests
+# (go test -tags integration ./integration/).
+#
+# Usage:
+#   docker compose up -d            # start MySQL, MinIO, Redis, RocketMQ
+#   docker compose down             # tear down
+#
+# The tests connect over 127.0.0.1 using the TEST_* environment variables
+# (see integration/helpers_test.go); when those are unset they fall back to the
+# app's config loader (local development with Infisical/etcd).
+#
+# The RocketMQ broker only auto-creates a topic on first publish, but the e2e
+# test's consumer needs the topic's route info at start. Create it once the
+# broker is up (the CI workflow does this automatically):
+#   docker compose exec -T rocketmq-broker \
+#     sh mqadmin updateTopic -b 127.0.0.1:10911 -t reporting -r 8 -w 8
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: efficient_report_exporter
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+    depends_on:
+      - rocketmq-namesrv
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    volumes:
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro

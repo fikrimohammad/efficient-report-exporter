@@ -7,6 +7,12 @@ on:
   # ...and on every commit in a branch that becomes a PR targeting main.
   pull_request:
     branches: [ main ]
+  # Manual trigger (runs the full suite regardless of branch).
+  workflow_dispatch:
+  # Nightly full-suite run to catch rare flakes and dependency drift without
+  # blocking anyone.
+  schedule:
+    - cron: "0 2 * * *"
 
 # Cancel any in-progress CI run for the same PR/branch when a new commit
 # arrives, so only the latest commit's checks run.
@@ -84,3 +90,73 @@ jobs:
           name: coverage-report
           path: coverage.out
           if-no-files-found: error
+
+  integration:
+    name: Integration Tests (MySQL + MinIO + Redis + RocketMQ)
+    # Heavy job (MySQL + MinIO + Redis + RocketMQ + migrations): pre-submit on
+    # PRs to main, post-submit on main pushes, and the scheduled/manual runs.
+    # Skipped for ordinary feature-branch pushes.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Start infrastructure
+        run: docker compose up -d
+
+      # The broker auto-creates a topic only on first publish, but the e2e
+      # consumer needs the topic's route info at Start. Create it explicitly
+      # (targeting the broker directly; mqadmin exits 0 even on failure, so
+      # check its output rather than the exit code).
+      - name: Create RocketMQ topic
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose exec -T rocketmq-broker sh mqadmin updateTopic -b 127.0.0.1:10911 -t reporting -r 8 -w 8 2>&1 | grep -q "success"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "RocketMQ broker did not become ready" && exit 1
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL did not become ready" && exit 1
+
+      - name: Apply migrations
+        run: |
+          for f in db/migrations/*.up.sql; do
+            docker compose exec -T mysql mysql -uroot -proot efficient_report_exporter < "$f"
+          done
+
+      - name: Run integration tests
+        env:
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: "3306"
+          TEST_DB_NAME: efficient_report_exporter
+          TEST_DB_USER: root
+          TEST_DB_PASSWORD: root
+          TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          TEST_S3_ACCESS_KEY: minioadmin
+          TEST_S3_SECRET_KEY: minioadmin
+          TEST_S3_REGION: us-east-1
+          TEST_REDIS_HOST: 127.0.0.1
+          TEST_REDIS_PORT: "6379"
+          TEST_MQ_NAMESRV: 127.0.0.1:9876
+        run: go test -tags integration -count=1 ./integration/
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: docker compose logs --no-color

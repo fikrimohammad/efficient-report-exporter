@@ -81,7 +81,10 @@ func buildReportConditions(filter repository.QueryReportFilter) reportConditions
 		}
 
 		if endTime != nil && !endTime.IsZero() {
-			rangeClauses = append(rangeClauses, "order_settlement_time <= :order_settlement_time_end_time")
+			// End-exclusive so adjacent batches (built as [start, end)) don't
+			// both pick up a row whose settlement time falls exactly on the
+			// boundary.
+			rangeClauses = append(rangeClauses, "order_settlement_time < :order_settlement_time_end_time")
 			w.args["order_settlement_time_end_time"] = *endTime
 		}
 
