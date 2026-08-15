@@ -154,6 +154,29 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 	if jobData.DownloadURL == "" {
 		t.Fatal("expected a presigned download URL on success")
 	}
+
+	// Verify the list endpoint surfaces the completed job.
+	var listResp apimodel.ListExportReportJobsResponse
+	status = httpDoJSON(t, http.MethodGet, fmt.Sprintf("%s%s?shop_id=%d", baseURL, constant.RouteExportReportJobs, shopID), nil, &listResp)
+	if status != http.StatusOK {
+		t.Fatalf("GET jobs returned %d", status)
+	}
+	if listResp.Data == nil || len(listResp.Data.Jobs) == 0 {
+		t.Fatalf("expected at least one job in the list, got %+v", listResp)
+	}
+
+	found := false
+	for _, job := range listResp.Data.Jobs {
+		if job.JobID == exportResp.Data.JobID {
+			found = true
+			if job.Status != string(constant.ExportReportJobStatusSuccess) {
+				t.Fatalf("expected listed job status success, got %s", job.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected the created job %s in the list, got %+v", exportResp.Data.JobID, listResp.Data.Jobs)
+	}
 }
 
 // startAPIServer starts a real Hertz server exposing the report export routes
@@ -174,6 +197,7 @@ func startAPIServer(t *testing.T, uc usecase.Report) string {
 	engine := server.New(server.WithListener(ln), server.WithExitWaitTime(10*time.Millisecond))
 	engine.POST(constant.RouteExportReport, h.RequestExportReport)
 	engine.GET(constant.RouteExportReportJob, h.GetExportReportJob)
+	engine.GET(constant.RouteExportReportJobs, h.ListExportReportJobs)
 
 	go func() { _ = engine.Run() }()
 	for i := 0; i < 100; i++ {
