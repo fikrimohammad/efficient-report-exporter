@@ -6,17 +6,22 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"go.uber.org/mock/gomock"
 )
 
 func TestProcessExportReport_Success(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		processExportReport: func(_ context.Context, _ usecase.ProcessExportReportParams) error {
+	mockUC := mocks.NewMockReport(gomock.NewController(t))
+	mockUC.EXPECT().
+		ProcessExportReport(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.ProcessExportReportParams) error {
 			return nil
-		},
-	}
+		}).
+		AnyTimes()
 
 	h := &Handler{reportUseCase: mockUC}
 
@@ -43,17 +48,19 @@ func TestProcessExportReport_UnmarshalError(t *testing.T) {
 	if !errs.As(err, &e) {
 		t.Fatalf("expected *errs.Error, got %T", err)
 	}
-	if e.Code() != errs.InvalidArgument {
+	if e.Code() != apperrors.InvalidArgument {
 		t.Errorf("expected code InvalidArgument, got %v", e.Code())
 	}
 }
 
 func TestProcessExportReport_UseCaseError(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		processExportReport: func(_ context.Context, _ usecase.ProcessExportReportParams) error {
+	mockUC := mocks.NewMockReport(gomock.NewController(t))
+	mockUC.EXPECT().
+		ProcessExportReport(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.ProcessExportReportParams) error {
 			return errors.New("processing failed")
-		},
-	}
+		}).
+		AnyTimes()
 
 	h := &Handler{reportUseCase: mockUC}
 

@@ -20,24 +20,6 @@ type Secret struct {
 	DynamicConfigPassword confloader.Getter[string] `conf:"folder=dynamic_config,key=password"`
 }
 
-// DBSecret holds extracted DB secret values.
-type DBSecret struct {
-	UserName string
-	Password string
-}
-
-// RedisSecret holds extracted Redis secret values.
-type RedisSecret struct {
-	UserName string
-	Password string
-}
-
-// S3Secret holds extracted S3 secret values.
-type S3Secret struct {
-	AccessKeyID     string
-	SecretAccessKey string
-}
-
 func LoadSecret(ctx context.Context, appName string, cfg confloader.Config) (*confloader.Loader[Secret], error) {
 	c := buildSecretLoaderConfig(appName, cfg)
 	loader, err := confloader.New[Secret](ctx, c)

@@ -49,10 +49,14 @@ const (
 	DefaultRequestLockTTL  = 5 * time.Second
 	DefaultProcessLockTTL  = 1 * time.Minute
 	DefaultCSVWriteBufSize = 1024 * 1024
+	// DefaultPipeBufferSize bounds the in-memory byte pipe between the
+	// CSV/zip producer and the S3 uploader, letting the producer run ahead of
+	// the consumer instead of rendezvousing on every write.
+	DefaultPipeBufferSize = 4 * 1024 * 1024
 )
 
 const (
-	SingleRowQueryLimit       = 1
+	QueryLimitOne             = 1
 	ContentTypeOctetStream    = "application/octet-stream"
 	ContentDispositionPattern = `attachment; filename="%s"`
 )
@@ -61,6 +65,7 @@ const (
 	DefaultListExportReportJobsLimit = 20
 	MaxListExportReportJobsLimit     = 100
 	PresignedURLDefaultExpiry        = 15 * time.Minute
+	MaxExportTimeRange               = 90 * 24 * time.Hour
 )
 
 var ReportFileCSVHeaders = []string{

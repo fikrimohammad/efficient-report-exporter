@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -20,7 +19,7 @@ func TestBuildInsertExportReportJobQuery(t *testing.T) {
 		Status:    constant.ExportReportJobStatusProcessing,
 	}
 
-	query, args := r.buildInsertExportReportJobQuery(context.Background(), 42, params)
+	query, args := r.buildInsertExportReportJobQuery(42, params)
 
 	if !strings.Contains(query, "INSERT INTO export_report_job") {
 		t.Fatal("should be an INSERT query")

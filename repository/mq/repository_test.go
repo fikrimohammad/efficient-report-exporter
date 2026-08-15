@@ -4,44 +4,21 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
-	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"go.uber.org/mock/gomock"
 )
 
-type stubProducer struct {
-	publishSyncCalls        []publishSyncCall
-	publishSyncErr          error
-	publishSyncWithDelayErr error
-}
-
-type publishSyncCall struct {
-	topic string
-	tag   string
-	key   string
-	msg   []byte
-}
-
-func (s *stubProducer) PublishSync(_ context.Context, topic, tag, key string, message []byte) error {
-	s.publishSyncCalls = append(s.publishSyncCalls, publishSyncCall{topic: topic, tag: tag, key: key, msg: message})
-	return s.publishSyncErr
-}
-
-func (s *stubProducer) PublishSyncWithDelay(_ context.Context, topic, tag, key string, message []byte, _ time.Duration) error {
-	s.publishSyncCalls = append(s.publishSyncCalls, publishSyncCall{topic: topic, tag: tag, key: key, msg: message})
-	return s.publishSyncWithDelayErr
-}
-
-func (s *stubProducer) PublishAsync(_ context.Context, topic, tag, key string, message []byte,
-	callback func(ctx context.Context, result *primitive.SendResult, err error)) error {
-	return nil
+func newMockProducerClient(t *testing.T) *mocks.MockProducerClient {
+	t.Helper()
+	return mocks.NewMockProducerClient(gomock.NewController(t))
 }
 
 func TestNew_Success(t *testing.T) {
-	producer := &stubProducer{}
-	_, err := New(producer)
+	_, err := New(newMockProducerClient(t))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,13 +34,23 @@ func TestNew_NilProducer(t *testing.T) {
 	if !errs.As(err, &e) {
 		t.Fatalf("expected *errs.Error, got %T", err)
 	}
-	if e.Code() != errs.Internal {
+	if e.Code() != apperrors.Internal {
 		t.Errorf("expected code Internal, got %v", e.Code())
 	}
 }
 
 func TestPublishExportReportProcessMsg_Success(t *testing.T) {
-	producer := &stubProducer{}
+	producer := newMockProducerClient(t)
+
+	var topic, tag, key string
+	var message []byte
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, tpc, tg, k string, m []byte) error {
+			topic, tag, key, message = tpc, tg, k, m
+			return nil
+		})
+
 	repo, err := New(producer)
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
@@ -76,27 +63,26 @@ func TestPublishExportReportProcessMsg_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(producer.publishSyncCalls) != 1 {
-		t.Fatalf("expected 1 publish call, got %d", len(producer.publishSyncCalls))
+	if topic != "reporting" {
+		t.Errorf("expected topic 'reporting', got %s", topic)
 	}
-
-	call := producer.publishSyncCalls[0]
-	if call.topic != "reporting" {
-		t.Errorf("expected topic 'reporting', got %s", call.topic)
+	if tag != "export_report_process" {
+		t.Errorf("expected tag 'export_report_process', got %s", tag)
 	}
-	if call.tag != "export_report_process" {
-		t.Errorf("expected tag 'export_report_process', got %s", call.tag)
+	if key != "42" {
+		t.Errorf("expected key '42', got %s", key)
 	}
-	if call.key != "42" {
-		t.Errorf("expected key '42', got %s", call.key)
-	}
-	if len(call.msg) == 0 {
+	if len(message) == 0 {
 		t.Error("expected non-empty message")
 	}
 }
 
 func TestPublishExportReportProcessMsg_PublishError(t *testing.T) {
-	producer := &stubProducer{publishSyncErr: errors.New("publish failed")}
+	producer := newMockProducerClient(t)
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(errors.New("publish failed"))
+
 	repo, err := New(producer)
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
@@ -113,13 +99,23 @@ func TestPublishExportReportProcessMsg_PublishError(t *testing.T) {
 	if !errs.As(err, &e) {
 		t.Fatalf("expected *errs.Error, got %T", err)
 	}
-	if e.Code() != errs.MQInternal {
+	if e.Code() != apperrors.MQInternal {
 		t.Errorf("expected code MQInternal, got %v", e.Code())
 	}
 }
 
 func TestPublishExportReportDoneMsg_Success(t *testing.T) {
-	producer := &stubProducer{}
+	producer := newMockProducerClient(t)
+
+	var topic, tag, key string
+	var message []byte
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, tpc, tg, k string, m []byte) error {
+			topic, tag, key, message = tpc, tg, k, m
+			return nil
+		})
+
 	repo, err := New(producer)
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
@@ -132,27 +128,26 @@ func TestPublishExportReportDoneMsg_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(producer.publishSyncCalls) != 1 {
-		t.Fatalf("expected 1 publish call, got %d", len(producer.publishSyncCalls))
+	if topic != "reporting" {
+		t.Errorf("expected topic 'reporting', got %s", topic)
 	}
-
-	call := producer.publishSyncCalls[0]
-	if call.topic != "reporting" {
-		t.Errorf("expected topic 'reporting', got %s", call.topic)
+	if tag != "export_report_done" {
+		t.Errorf("expected tag 'export_report_done', got %s", tag)
 	}
-	if call.tag != "export_report_done" {
-		t.Errorf("expected tag 'export_report_done', got %s", call.tag)
+	if key != "99" {
+		t.Errorf("expected key '99', got %s", key)
 	}
-	if call.key != "99" {
-		t.Errorf("expected key '99', got %s", call.key)
-	}
-	if len(call.msg) == 0 {
+	if len(message) == 0 {
 		t.Error("expected non-empty message")
 	}
 }
 
 func TestPublishExportReportDoneMsg_PublishError(t *testing.T) {
-	producer := &stubProducer{publishSyncErr: errors.New("publish failed")}
+	producer := newMockProducerClient(t)
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(errors.New("publish failed"))
+
 	repo, err := New(producer)
 	if err != nil {
 		t.Fatalf("failed to create repo: %v", err)
@@ -169,7 +164,7 @@ func TestPublishExportReportDoneMsg_PublishError(t *testing.T) {
 	if !errs.As(err, &e) {
 		t.Fatalf("expected *errs.Error, got %T", err)
 	}
-	if e.Code() != errs.MQInternal {
+	if e.Code() != apperrors.MQInternal {
 		t.Errorf("expected code MQInternal, got %v", e.Code())
 	}
 }

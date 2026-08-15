@@ -1,6 +1,7 @@
 package mq
 
 import (
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
@@ -12,7 +13,7 @@ type repo struct {
 
 func New(producer rocketmqproducer.Client) (repository.MQ, error) {
 	if producer == nil {
-		return nil, errs.New(errs.Internal, "producer is not initialized")
+		return nil, errs.New(apperrors.Internal, "producer is not initialized")
 	}
 
 	return &repo{

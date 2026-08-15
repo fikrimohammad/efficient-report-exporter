@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
@@ -12,7 +13,7 @@ import (
 
 func (r *repo) GeneratePresignedDownloadURL(ctx context.Context, params repository.GeneratePresignedDownloadURLParams) (string, error) {
 	if params.FileName == "" {
-		return "", errs.New(errs.InvalidArgument, "file_name is required")
+		return "", errs.New(apperrors.InvalidArgument, "file_name is required")
 	}
 
 	presignURL, err := r.s3.PresignGetObject(ctx, commons3.PresignGetObjectParams{
@@ -23,7 +24,7 @@ func (r *repo) GeneratePresignedDownloadURL(ctx context.Context, params reposito
 		ExpiresIn:                  params.ExpiresIn,
 	})
 	if err != nil {
-		err = errs.Wrap(errs.S3Internal, "generate presigned url", err)
+		err = errs.Wrap(apperrors.S3Internal, "generate presigned url", err)
 		return "", err
 	}
 

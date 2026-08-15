@@ -20,7 +20,7 @@ type Server struct {
 }
 
 func New(src *app.Resource) (*Server, error) {
-	handler, err := apihandler.New(src.ReportUseCase, src.Config.Dynamic)
+	handler, err := apihandler.New(src.ReportUseCase)
 	if err != nil {
 		return nil, err
 	}

@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/go-typedpipe/v2"
+	"go.uber.org/mock/gomock"
 )
 
 func TestBuildReportFileName(t *testing.T) {
@@ -110,44 +112,58 @@ func TestAsyncZipReportBatchFiles_ZipsEntries(t *testing.T) {
 }
 
 func TestRunExportReportPipeline_BatchedPathProducesZip(t *testing.T) {
-	mysql := defaultMockMySQL()
-	s3 := defaultMockS3()
-	mq := defaultMockMQ()
-	dl := newTestDynamicLoader(t)
-	defer func() { _ = dl.Stop() }()
+	ctrl := gomock.NewController(t)
+	mysql := mocks.NewMockMySQL(ctrl)
+	s3 := mocks.NewMockS3(ctrl)
+	mq := mocks.NewMockMQ(ctrl)
 
-	mysql.countReportFn = func(_ context.Context, _ repository.QueryReportFilter) (int64, error) {
-		return 100001, nil
-	}
+	mysql.EXPECT().
+		CountReport(gomock.Any(), gomock.Any()).
+		Return(int64(100001), nil).
+		AnyTimes()
 
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(5 * time.Hour) // 3 batches at 2h
 
-	mysql.queryReportFn = func(_ context.Context, filter repository.QueryReportFilter) ([]*model.Report, error) {
-		return []*model.Report{{
-			ID:                  1,
-			ShopID:              100,
-			OrderID:             1,
-			OrderSettlementTime: *filter.OrderSettlementTimeRange.StartTime,
-			Details:             model.ReportFeeDetails{{OrderDetailID: 1, ProductID: 1, FeeFinalAmount: 1.5}},
-		}}, nil
-	}
+	mysql.EXPECT().
+		QueryReport(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, filter repository.QueryReportFilter) ([]*model.Report, error) {
+			return []*model.Report{{
+				ID:                  1,
+				ShopID:              100,
+				OrderID:             1,
+				OrderSettlementTime: *filter.OrderSettlementTimeRange.StartTime,
+				Details:             model.ReportFeeDetails{{OrderDetailID: 1, ProductID: 1, FeeFinalAmount: 1.5}},
+			}}, nil
+		}).
+		AnyTimes()
 
 	var (
 		uploadedName string
 		uploadedData bytes.Buffer
 	)
-	s3.uploadReportFn = func(_ context.Context, params repository.UploadReportFileParams) error {
-		uploadedName = params.FileName
-		_, err := io.Copy(&uploadedData, params.FileData)
-		return err
-	}
+	s3.EXPECT().
+		UploadReportFile(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params repository.UploadReportFileParams) error {
+			uploadedName = params.FileName
+			_, err := io.Copy(&uploadedData, params.FileData)
+			return err
+		}).
+		AnyTimes()
 
 	var updatedStatus constant.ExportReportJobStatus
-	mysql.updateExportReportJob = func(_ context.Context, params repository.UpdateExportReportJobParams) error {
-		updatedStatus = params.Status
-		return nil
-	}
+	mysql.EXPECT().
+		UpdateExportReportJob(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params repository.UpdateExportReportJobParams) error {
+			updatedStatus = params.Status
+			return nil
+		}).
+		AnyTimes()
+
+	mq.EXPECT().PublishExportReportDoneMsg(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	dl := newTestDynamicLoader(t)
+	defer func() { _ = dl.Stop() }()
 
 	re := &reportExporter{
 		mysqlRepository: mysql,
@@ -164,7 +180,6 @@ func TestRunExportReportPipeline_BatchedPathProducesZip(t *testing.T) {
 	if updatedStatus != constant.ExportReportJobStatusSuccess {
 		t.Fatalf("expected job marked success, got %s", updatedStatus)
 	}
-
 	if !strings.HasSuffix(uploadedName, ".zip") {
 		t.Fatalf("expected .zip upload, got %s", uploadedName)
 	}

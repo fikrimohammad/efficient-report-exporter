@@ -2,8 +2,10 @@ package report
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
@@ -12,19 +14,19 @@ import (
 
 func (u *useCase) GetExportReportJob(ctx context.Context, params usecase.GetExportReportJobParams) (*usecase.GetExportReportJobResult, error) {
 	if params.JobID == 0 {
-		return nil, errs.New(errs.InvalidArgument, "job_id is required")
+		return nil, errs.New(apperrors.InvalidArgument, "job_id is required")
 	}
 
-	jobs, err := u.mySQLRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
+	jobs, err := u.mysqlRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
 		JobID: params.JobID,
-		Limit: constant.SingleRowQueryLimit,
+		Limit: constant.QueryLimitOne,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	if len(jobs) == 0 {
-		return nil, errs.New(errs.NotFound, "job not found")
+		return nil, errs.New(apperrors.NotFound, fmt.Sprintf("job not found: %d", params.JobID))
 	}
 
 	job := jobs[0]
@@ -34,7 +36,7 @@ func (u *useCase) GetExportReportJob(ctx context.Context, params usecase.GetExpo
 	}
 	result := &usecase.GetExportReportJobResult{
 		JobID:        job.ID,
-		Status:       string(job.Status),
+		Status:       job.Status,
 		CreationTime: time.UnixMilli(job.CreationTime),
 		UpdateTime:   updateTime,
 	}

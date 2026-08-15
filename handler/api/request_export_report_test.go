@@ -7,14 +7,17 @@ import (
 	"testing"
 
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
+	"go.uber.org/mock/gomock"
 )
 
 func TestRequestExportReport_Success(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		requestExportReport: func(_ context.Context, _ usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		RequestExportReport(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
 			return &usecase.RequestExportReportResult{JobID: 42}, nil
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.post(t, "/v1/reports/export", `{"request_id":"1","shop_id":"100","start_time":"2025-01-01T00:00:00Z","end_time":"2025-01-02T00:00:00Z"}`)
@@ -26,7 +29,7 @@ func TestRequestExportReport_Success(t *testing.T) {
 }
 
 func TestRequestExportReport_MissingShopID(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.post(t, "/v1/reports/export", `{"request_id":"1","start_time":"2025-01-01T00:00:00Z","end_time":"2025-01-02T00:00:00Z"}`)
 	ts.readBody(t, resp)
 
@@ -36,7 +39,7 @@ func TestRequestExportReport_MissingShopID(t *testing.T) {
 }
 
 func TestRequestExportReport_InvalidStartTime(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.post(t, "/v1/reports/export", `{"request_id":"1","shop_id":"100","start_time":"invalid","end_time":"2025-01-02T00:00:00Z"}`)
 	ts.readBody(t, resp)
 
@@ -46,7 +49,7 @@ func TestRequestExportReport_InvalidStartTime(t *testing.T) {
 }
 
 func TestRequestExportReport_InvalidEndTime(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.post(t, "/v1/reports/export", `{"request_id":"1","shop_id":"100","start_time":"2025-01-01T00:00:00Z","end_time":"invalid"}`)
 	ts.readBody(t, resp)
 
@@ -56,11 +59,13 @@ func TestRequestExportReport_InvalidEndTime(t *testing.T) {
 }
 
 func TestRequestExportReport_UseCaseError(t *testing.T) {
-	mockUC := &mockReportUseCase{
-		requestExportReport: func(_ context.Context, _ usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
+	mockUC := newMockReport(t)
+	mockUC.EXPECT().
+		RequestExportReport(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ usecase.RequestExportReportParams) (*usecase.RequestExportReportResult, error) {
 			return nil, errors.New("internal error")
-		},
-	}
+		}).
+		AnyTimes()
 
 	ts := setupTest(t, mockUC)
 	resp := ts.post(t, "/v1/reports/export", `{"request_id":"1","shop_id":"100","start_time":"2025-01-01T00:00:00Z","end_time":"2025-01-02T00:00:00Z"}`)
@@ -72,7 +77,7 @@ func TestRequestExportReport_UseCaseError(t *testing.T) {
 }
 
 func TestRequestExportReport_InvalidBody(t *testing.T) {
-	ts := setupTest(t, &mockReportUseCase{})
+	ts := setupTest(t, newMockReport(t))
 	resp := ts.post(t, "/v1/reports/export", `not json`)
 	ts.readBody(t, resp)
 

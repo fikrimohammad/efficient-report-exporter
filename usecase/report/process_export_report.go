@@ -3,9 +3,9 @@ package report
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/config"
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/model"
@@ -14,18 +14,19 @@ import (
 	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/errgroup"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
+	"github.com/fikrimohammad/go-dev-sdk/observability/logs"
 )
 
 func (u *useCase) ProcessExportReport(ctx context.Context, params usecase.ProcessExportReportParams) error {
-	re := reportExporter{
-		mysqlRepository: u.mySQLRepository,
+	e := reportExporter{
+		mysqlRepository: u.mysqlRepository,
 		mqRepository:    u.mqRepository,
 		redisRepository: u.redisRepository,
 		s3Repository:    u.s3Repository,
 		dynamicConfig:   u.dynamicConfig,
 	}
 
-	return re.Export(ctx, params)
+	return e.Export(ctx, params)
 }
 
 type reportExporter struct {
@@ -36,24 +37,17 @@ type reportExporter struct {
 	dynamicConfig   *confloader.Loader[config.DynamicConfig]
 }
 
-func (re *reportExporter) Export(ctx context.Context, params usecase.ProcessExportReportParams) error {
-	var (
-		err          error
-		lockAcquired bool
-	)
-
-	if err := re.lockExportReportJob(ctx, params); err != nil {
+func (e *reportExporter) Export(ctx context.Context, params usecase.ProcessExportReportParams) error {
+	lockToken, err := e.lockExportReportJob(ctx, params)
+	if err != nil {
 		return err
 	}
-	lockAcquired = true
 
 	defer func() {
-		if lockAcquired {
-			_ = re.unlockExportReportJob(ctx, params)
-		}
+		_ = e.unlockExportReportJob(ctx, params, lockToken)
 	}()
 
-	job, queryErr := re.queryExportReportJob(ctx, params)
+	job, queryErr := e.queryExportReportJob(ctx, params)
 	if queryErr != nil {
 		return queryErr
 	}
@@ -62,7 +56,7 @@ func (re *reportExporter) Export(ctx context.Context, params usecase.ProcessExpo
 		return nil
 	}
 
-	err = re.runExportReportPipeline(ctx, job.ShopID, time.UnixMilli(job.StartTime), time.UnixMilli(job.EndTime), params.JobID)
+	err = e.runExportReportPipeline(ctx, job.ShopID, time.UnixMilli(job.StartTime), time.UnixMilli(job.EndTime), params.JobID)
 	if err != nil {
 		return err
 	}
@@ -70,22 +64,23 @@ func (re *reportExporter) Export(ctx context.Context, params usecase.ProcessExpo
 	return nil
 }
 
-func (re *reportExporter) lockExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams) error {
-	lockTTL := re.dynamicConfig.Data().ProcessLockTTL.GetWithDefault(ctx, constant.DefaultProcessLockTTL)
-	err := re.redisRepository.LockExportReportProcess(ctx, repository.LockExportReportProcess{
+func (e *reportExporter) lockExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams) (string, error) {
+	lockTTL := e.dynamicConfig.Data().ProcessLockTTL.GetWithDefault(ctx, constant.DefaultProcessLockTTL)
+	token, err := e.redisRepository.LockExportReportProcess(ctx, repository.LockExportReportProcess{
 		JobID: params.JobID,
 		TTL:   lockTTL,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return token, nil
 }
 
-func (re *reportExporter) unlockExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams) error {
-	err := re.redisRepository.UnlockExportReportProcess(ctx, repository.UnlockExportReportProcess{
+func (e *reportExporter) unlockExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams, token string) error {
+	err := e.redisRepository.UnlockExportReportProcess(ctx, repository.UnlockExportReportProcess{
 		JobID: params.JobID,
+		Token: token,
 	})
 	if err != nil {
 		return err
@@ -94,23 +89,23 @@ func (re *reportExporter) unlockExportReportJob(ctx context.Context, params usec
 	return nil
 }
 
-func (re *reportExporter) queryExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams) (*model.ExportReportJob, error) {
-	jobs, err := re.mysqlRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
+func (e *reportExporter) queryExportReportJob(ctx context.Context, params usecase.ProcessExportReportParams) (*model.ExportReportJob, error) {
+	jobs, err := e.mysqlRepository.QueryExportReportJob(ctx, repository.QueryExportReportJobFilter{
 		JobID: params.JobID,
-		Limit: constant.SingleRowQueryLimit,
+		Limit: constant.QueryLimitOne,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	if len(jobs) == 0 {
-		return nil, errs.New(errs.NotFound, fmt.Sprintf("job not found: %d", params.JobID))
+		return nil, errs.New(apperrors.NotFound, fmt.Sprintf("job not found: %d", params.JobID))
 	}
 
 	return jobs[0], nil
 }
 
-func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID int64, startTime, endTime time.Time, jobID int64) error {
+func (e *reportExporter) runExportReportPipeline(ctx context.Context, shopID int64, startTime, endTime time.Time, jobID int64) error {
 	var (
 		err          error
 		mainPipeline = errgroup.New(ctx)
@@ -119,7 +114,7 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 	defer func() {
 		if err != nil {
 			errMsg := err.Error()
-			if updateErr := re.mysqlRepository.UpdateExportReportJob(ctx, repository.UpdateExportReportJobParams{
+			if updateErr := e.mysqlRepository.UpdateExportReportJob(ctx, repository.UpdateExportReportJobParams{
 				JobID:  jobID,
 				Status: constant.ExportReportJobStatusFailed,
 				Extra: model.ExportReportJobExtra{
@@ -133,7 +128,7 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 		}
 	}()
 
-	total, countErr := re.mysqlRepository.CountReport(ctx, repository.QueryReportFilter{
+	total, countErr := e.mysqlRepository.CountReport(ctx, repository.QueryReportFilter{
 		ShopID: &shopID,
 		OrderSettlementTimeRange: &repository.QueryReportTimeRange{
 			StartTime: &startTime,
@@ -145,13 +140,13 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 		return err
 	}
 
-	maxSingleFileRows := re.dynamicConfig.Data().MaxSingleFileRows.GetWithDefault(ctx, constant.DefaultMaxSingleFileRows)
+	maxSingleFileRows := e.dynamicConfig.Data().MaxSingleFileRows.GetWithDefault(ctx, constant.DefaultMaxSingleFileRows)
 
 	var reportFileName string
 	if total <= int64(maxSingleFileRows) {
-		reportFileName, err = re.runSinglePipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
+		reportFileName, err = e.runSinglePipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
 	} else {
-		reportFileName, err = re.runBatchedPipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
+		reportFileName, err = e.runBatchedPipeline(ctx, mainPipeline, shopID, startTime, endTime, jobID)
 	}
 	if err != nil {
 		return err
@@ -162,7 +157,7 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 		return err
 	}
 
-	updateErr := re.mysqlRepository.UpdateExportReportJob(ctx, repository.UpdateExportReportJobParams{
+	updateErr := e.mysqlRepository.UpdateExportReportJob(ctx, repository.UpdateExportReportJobParams{
 		JobID:  jobID,
 		Status: constant.ExportReportJobStatusSuccess,
 		Extra: model.ExportReportJobExtra{
@@ -174,52 +169,52 @@ func (re *reportExporter) runExportReportPipeline(ctx context.Context, shopID in
 		return err
 	}
 
-	if pubErr := re.mqRepository.PublishExportReportDoneMsg(ctx, model.ExportReportDoneMessage{
+	if pubErr := e.mqRepository.PublishExportReportDoneMsg(ctx, model.ExportReportDoneMessage{
 		JobID: jobID,
 	}); pubErr != nil {
-		log.Printf("failed to publish export report done message for job %d: %v", jobID, pubErr)
+		logs.Warn(ctx, "failed to publish export report done message", "job.id", jobID, "error", pubErr)
 	}
 
 	return nil
 }
 
-func (re *reportExporter) runSinglePipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
-	reports, fetchErr := re.asyncFetchReports(mainPipeline, shopID, startTime, endTime)
+func (e *reportExporter) runSinglePipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
+	reports, fetchErr := e.asyncFetchReports(mainPipeline, shopID, startTime, endTime)
 	if fetchErr != nil {
 		return "", fetchErr
 	}
 
-	lines, lineErr := re.asyncBuildReportLine(ctx, mainPipeline, reports)
+	lines, lineErr := e.asyncBuildReportLine(ctx, mainPipeline, reports)
 	if lineErr != nil {
 		return "", lineErr
 	}
 
-	csv, csvErr := re.asyncBuildReportCSVFile(ctx, mainPipeline, lines)
+	csv, csvErr := e.asyncBuildReportCSVFile(ctx, mainPipeline, lines)
 	if csvErr != nil {
 		return "", csvErr
 	}
 
 	fileName := buildReportFileName(jobID, constant.ReportCSVExtension)
-	if uploadErr := re.asyncUploadReportFile(mainPipeline, csv, fileName); uploadErr != nil {
+	if uploadErr := e.asyncUploadReportFile(mainPipeline, csv, fileName); uploadErr != nil {
 		return "", uploadErr
 	}
 
 	return fileName, nil
 }
 
-func (re *reportExporter) runBatchedPipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
-	batchFiles, batchErr := re.asyncBuildReportBatchFiles(ctx, mainPipeline, shopID, startTime, endTime)
+func (e *reportExporter) runBatchedPipeline(ctx context.Context, mainPipeline *errgroup.Group, shopID int64, startTime, endTime time.Time, jobID int64) (string, error) {
+	batchFiles, batchErr := e.asyncBuildReportBatchFiles(ctx, mainPipeline, shopID, startTime, endTime)
 	if batchErr != nil {
 		return "", batchErr
 	}
 
-	zipReader, zipErr := re.asyncZipReportBatchFiles(mainPipeline, batchFiles)
+	zipReader, zipErr := e.asyncZipReportBatchFiles(mainPipeline, batchFiles)
 	if zipErr != nil {
 		return "", zipErr
 	}
 
 	fileName := buildReportFileName(jobID, constant.ReportZipExtension)
-	if uploadErr := re.asyncUploadReportFile(mainPipeline, zipReader, fileName); uploadErr != nil {
+	if uploadErr := e.asyncUploadReportFile(mainPipeline, zipReader, fileName); uploadErr != nil {
 		return "", uploadErr
 	}
 

@@ -1,4 +1,4 @@
-.PHONY: gen-model clean-gen db/migrate-up db/migrate-down db/seed db/reset db/new-migration run/api run/consumer build build/api build/mq docker/build docker/build-api docker/build-mq run/test
+.PHONY: gen-model clean-gen gen-mock db/migrate-up db/migrate-down db/migrate-down-all db/seed db/reset db/new-migration run/api run/consumer build build/api build/mq docker/build docker/build-api docker/build-mq run/test
 
 IDL_DIR := idl
 THRIFT_FILES := $(shell find $(IDL_DIR) -type f -name "*.thrift")
@@ -44,11 +44,18 @@ gen-model:
 clean-gen:
 	rm -rf model/api
 
+# Regenerate gomock mocks for the application and SDK interfaces
+gen-mock:
+	go generate ./internal/mocks/
+
 # Database migrations (reads config + Infisical secrets like the app does)
 db/migrate-up:
 	APP_ENV=$(APP_ENV) go run db/migrate/main.go up
 
 db/migrate-down:
+	APP_ENV=$(APP_ENV) go run db/migrate/main.go down
+
+db/migrate-down-all:
 	APP_ENV=$(APP_ENV) go run db/migrate/main.go down-all
 
 # Database seed (reads config + Infisical secrets like the app does)
@@ -64,8 +71,8 @@ db/seed:
 db/new-migration:
 	go run db/migrate/main.go new $(NAME)
 
-# Full DB reset: drop tables, re-create, seed
-db/reset: db/migrate-down db/migrate-up db/seed
+# Full DB reset: drop all tables, re-create, seed
+db/reset: db/migrate-down-all db/migrate-up db/seed
 
 # ── Run services ──────────────────────────────────────────────────────────────
 

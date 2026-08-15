@@ -152,7 +152,7 @@ curl -X POST http://localhost:18081/v1/reports/export \
         "start_time": "2026-08-01T00:00:00Z",
         "end_time": "2026-08-10T23:59:59Z"
       }'
-# => {"base":{"code":0,"message":"success"},"data":{"job_id":"..."}}
+# => {"base":{"code":"0","message":"success"},"data":{"job_id":"..."}}
 
 # poll the job until success
 curl http://localhost:18081/v1/reports/export/<job_id>
@@ -181,8 +181,11 @@ The codebase follows a layered (clean-architecture style) layout:
 | MQ handlers | `handler/mq` | Decode messages, invoke use cases |
 | Use cases | `usecase/report` | Business logic: request, process, get, list |
 | Repositories | `repository/{mysql,redis,s3,mq}` | Data access / outbound side effects |
+| Error codes | `apperrors` | Application error codes (extends the SDK's `errs` codes) |
+| Test doubles | `internal/mocks` | gomock mocks for the app and SDK interfaces (regenerate with `make gen-mock`) |
 | Shared libs | `go-dev-sdk` (vendored) | `apiserver`, `db`, `redis`, `s3`, `rocketmq`, `confloader`, `observability`, `errs`, `errgroup` |
 | Contracts | `idl/api`, `model/api` | Thrift IDL and generated request/response models |
+| Integration tests | `integration` | Opt-in tests/benchmarks against real MySQL + MinIO (`-tags integration`) |
 
 The two deployable binaries (`cmd/api`, `cmd/mq`) are thin entrypoints over a shared composition root:
 
@@ -452,9 +455,19 @@ flowchart TB
 
 ### Read path — keyset pagination under a range index
 
-The `report` table is indexed by `(shop_id, order_settlement_time, id)`. `CountReport` and `QueryReport` build the same `WHERE` clause from a single `buildReportConditions` helper (shop id + `order_settlement_time` range + `id` cursor), so the count used for routing can never drift from the rows actually fetched.
+The `report` table is indexed by `(shop_id, order_settlement_time, id)`. `CountReport` and `QueryReport` build the same `WHERE` clause from a single `buildReportConditions` helper (shop id + `order_settlement_time` range + keyset cursor), so the count used for routing can never drift from the rows actually fetched.
 
-Fetching is **keyset pagination**: each page requests `id > last_seen_id ORDER BY id ASC LIMIT query_limit_per_page` and advances the cursor to the last id returned. There is no `OFFSET`, so page cost is independent of depth. In the batched path the same cursor runs *within* each batch's narrower time range, which maps directly onto the index's `(shop_id, order_settlement_time)` prefix.
+Fetching is **keyset pagination** over the index's `(order_settlement_time, id)` suffix: each page requests
+
+```text
+WHERE shop_id = ? AND order_settlement_time BETWEEN ? AND ?
+  AND (order_settlement_time > :last_settlement_time
+       OR (order_settlement_time = :last_settlement_time AND id > :last_id))
+ORDER BY order_settlement_time ASC, id ASC
+LIMIT ?
+```
+
+and advances the composite cursor to the last `(order_settlement_time, id)` returned. There is no `OFFSET`, so page cost is independent of depth. The cursor runs *within* each batch's narrower time range in the batched path, and because it is ordered by the same `(order_settlement_time, id)` suffix as the index, it is pushed into the range scan — no per-page filesort.
 
 ### Concurrency & backpressure
 
@@ -485,7 +498,7 @@ All endpoints are defined in Thrift IDL (`idl/api/report.thrift`) and served ove
 
 ```json
 {
-  "base": { "code": 0, "message": "success" },
+  "base": { "code": "0", "message": "success" },
   "data": { ... }
 }
 ```
@@ -514,12 +527,12 @@ All endpoints are defined in Thrift IDL (`idl/api/report.thrift`) and served ove
 
 ```json
 {
-  "base": { "code": 0, "message": "success" },
+  "base": { "code": "0", "message": "success" },
   "data": { "job_id": "7890123456789012345" }
 }
 ```
 
-If a non-`failed` job already exists for the same `request_id`, it is reused and its `job_id` returned.
+If a `processing` or `success` job already exists for the same `request_id`, it is reused and its `job_id` returned. A `failed` job is reset to `processing` and retried.
 
 ### `GET /v1/reports/export/:job_id` — get job status
 
@@ -527,7 +540,7 @@ If a non-`failed` job already exists for the same `request_id`, it is reused and
 
 ```json
 {
-  "base": { "code": 0, "message": "success" },
+  "base": { "code": "0", "message": "success" },
   "data": {
     "job_id": "7890123456789012345",
     "status": "success",
@@ -542,12 +555,13 @@ If a non-`failed` job already exists for the same `request_id`, it is reused and
 - `status` ∈ `processing` \| `success` \| `failed`.
 - `download_url` is populated only on `success` (presigned, 15-minute expiry).
 - `error_message` is populated only on `failed`.
+- `updated_at` is an empty string while a job is still `processing`.
 
 ### `GET /v1/reports/export?shop_id=...&page_token=...&limit=...` — list jobs
 
 Query params: `shop_id` (required), `page_token` (cursor, optional), `limit` (optional, default 20, max 100).
 
-`next_page_token` is omitted on the last page; pass it back as `page_token` to page through results.
+`next_page_token` is an empty string on the last page; pass it back as `page_token` to page through results.
 
 ### Errors
 
@@ -557,6 +571,7 @@ Errors are returned as the `base` envelope without `data`, with an application `
 | --- | --- | --- |
 | `0` | `OK` | 200 |
 | `1001` | `INVALID_ARGUMENT` | 400 |
+| `1002` | `CONFLICT` | 409 |
 | `4004` | `NOT_FOUND` | 404 |
 | `5001` | `INTERNAL` | 500 |
 | `5002` | `DB_INTERNAL` | 500 |
@@ -618,7 +633,6 @@ Configuration is layered and merged at startup:
 | `process_export_report/request_lock_ttl` | `5s` | Request-deduplication lock TTL |
 | `process_export_report/process_lock_ttl` | `1m` | Job processing lock TTL |
 | `process_export_report/csv_write_buf_size` | `1MB` | CSV writer buffer size |
-| `api_handler/timeouts` | — | Per-handler timeout overrides |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -679,6 +693,7 @@ Before opening a PR, please:
   make run/test   # go test -count=1 -gcflags="all=-N -l" ./...
   ```
 - Update the Thrift IDL (`idl/api/*.thrift`) and regenerate models (`make gen-model`) whenever the API contract changes.
+- Regenerate gomock mocks (`make gen-mock`) whenever an interface changes.
 - Keep documentation in sync with behavior changes.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

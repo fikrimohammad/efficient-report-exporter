@@ -1,11 +1,11 @@
 package mq
 
 import (
-	"fmt"
-
 	"github.com/fikrimohammad/efficient-report-exporter/app"
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	mqhandler "github.com/fikrimohammad/efficient-report-exporter/handler/mq"
 	"github.com/fikrimohammad/go-dev-sdk/appinfo"
+	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/fikrimohammad/go-dev-sdk/rocketmq/consumer"
 )
 
@@ -57,7 +57,7 @@ func (c *Consumer) Shutdown() error {
 }
 
 var (
-	ErrResourceNotInitialized       = fmt.Errorf("resource is not initialized")
-	ErrReportUseCaseNotInitialized  = fmt.Errorf("report use case is not initialized")
-	ErrConsumerConfigNotInitialized = fmt.Errorf("mq consumer config is not initialized")
+	ErrResourceNotInitialized       = errs.New(apperrors.Internal, "resource is not initialized")
+	ErrReportUseCaseNotInitialized  = errs.New(apperrors.Internal, "report use case is not initialized")
+	ErrConsumerConfigNotInitialized = errs.New(apperrors.Internal, "mq consumer config is not initialized")
 )

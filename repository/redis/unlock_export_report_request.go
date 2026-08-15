@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/fikrimohammad/efficient-report-exporter/apperrors"
 	"github.com/fikrimohammad/efficient-report-exporter/repository"
 	"github.com/fikrimohammad/go-dev-sdk/errs"
 	"github.com/redis/go-redis/v9"
@@ -11,19 +12,21 @@ import (
 
 func (r *repo) UnlockExportReportRequest(ctx context.Context, params repository.UnlockExportReportRequest) error {
 	key := exportReportRequestKey(params.RequestID)
-	isLocked, err := r.redisCli.Get(ctx, key).Bool()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		err = errs.Wrap(errs.CacheInternal, "get lock key", err)
-		return err
+	val, err := r.redisCli.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
+	if err != nil {
+		return errs.Wrap(apperrors.CacheInternal, "get request lock key", err)
 	}
 
-	if !isLocked {
+	// Release the lock only if it is still held by this owner.
+	if val != params.Token {
 		return nil
 	}
 
 	if err := r.redisCli.Del(ctx, key).Err(); err != nil {
-		err = errs.Wrap(errs.CacheInternal, "delete lock key", err)
-		return err
+		return errs.Wrap(apperrors.CacheInternal, "delete request lock key", err)
 	}
 
 	return nil
