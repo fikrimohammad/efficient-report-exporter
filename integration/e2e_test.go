@@ -4,12 +4,22 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cloudwego/hertz/pkg/app/server"
+
 	"github.com/fikrimohammad/efficient-report-exporter/constant"
+	apihandler "github.com/fikrimohammad/efficient-report-exporter/handler/api"
 	mqhandler "github.com/fikrimohammad/efficient-report-exporter/handler/mq"
+	apimodel "github.com/fikrimohammad/efficient-report-exporter/model/api"
 	mqrepository "github.com/fikrimohammad/efficient-report-exporter/repository/mq"
 	redisrepository "github.com/fikrimohammad/efficient-report-exporter/repository/redis"
 	"github.com/fikrimohammad/efficient-report-exporter/usecase"
@@ -20,10 +30,11 @@ import (
 	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
 )
 
-// TestEndToEndExportThroughRocketMQ exercises the full asynchronous flow against
-// the real queue: RequestExportReport publishes a process message to RocketMQ,
-// a real consumer consumes it and runs the export pipeline, and the job then
-// reports success with a presigned download URL.
+// TestEndToEndExportThroughRocketMQ exercises the full asynchronous flow through
+// the public HTTP API and the real queue: POST /v1/reports/export publishes a
+// process message to RocketMQ, a real consumer consumes it and runs the export
+// pipeline, and GET /v1/reports/export/:job_id then reports success with a
+// presigned download URL.
 func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 	ctx := context.Background()
 	d := setupDeps(t)
@@ -101,33 +112,117 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 	// Allow the consumer to finish rebalancing before publishing.
 	time.Sleep(2 * time.Second)
 
-	result, err := uc.RequestExportReport(ctx, usecase.RequestExportReportParams{
-		RequestID: time.Now().UnixNano(),
-		ShopID:    shopID,
-		StartTime: start,
-		EndTime:   end,
-	})
-	if err != nil {
-		t.Fatalf("request export: %v", err)
+	// Drive the flow through the real HTTP API.
+	baseURL := "http://" + startAPIServer(t, uc)
+
+	var exportResp apimodel.ExportReportResponse
+	status := httpDoJSON(t, http.MethodPost, baseURL+constant.RouteExportReport, apimodel.ExportReportRequest{
+		RequestID: strconv.FormatInt(time.Now().UnixNano(), 10),
+		ShopID:    strconv.FormatInt(shopID, 10),
+		StartTime: start.Format(time.RFC3339),
+		EndTime:   end.Format(time.RFC3339),
+	}, &exportResp)
+	if status != http.StatusOK {
+		t.Fatalf("POST export returned %d", status)
+	}
+	if exportResp.Data == nil || exportResp.Data.JobID == "" {
+		t.Fatalf("expected a job_id in the response, got %+v", exportResp)
 	}
 
 	deadline := time.Now().Add(60 * time.Second)
-	var job *usecase.GetExportReportJobResult
+	jobURL := fmt.Sprintf("%s%s/%s", baseURL, constant.RouteExportReport, exportResp.Data.JobID)
+	var jobData apimodel.GetExportReportJobData
 	for time.Now().Before(deadline) {
-		job, err = uc.GetExportReportJob(ctx, usecase.GetExportReportJobParams{JobID: result.JobID})
-		if err != nil {
-			t.Fatalf("get export job: %v", err)
+		var jobResp apimodel.GetExportReportJobResponse
+		status := httpDoJSON(t, http.MethodGet, jobURL, nil, &jobResp)
+		if status != http.StatusOK {
+			t.Fatalf("GET job returned %d", status)
 		}
-		if job.Status == constant.ExportReportJobStatusSuccess || job.Status == constant.ExportReportJobStatusFailed {
+		if jobResp.Data == nil {
+			t.Fatalf("expected job data in the response, got %+v", jobResp)
+		}
+		jobData = *jobResp.Data
+		if jobData.Status == string(constant.ExportReportJobStatusSuccess) || jobData.Status == string(constant.ExportReportJobStatusFailed) {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	if job.Status != constant.ExportReportJobStatusSuccess {
-		t.Fatalf("expected job success, got %s (err=%s)", job.Status, job.ErrorMessage)
+	if jobData.Status != string(constant.ExportReportJobStatusSuccess) {
+		t.Fatalf("expected job success, got %s (err=%s)", jobData.Status, jobData.ErrorMessage)
 	}
-	if job.DownloadURL == "" {
+	if jobData.DownloadURL == "" {
 		t.Fatal("expected a presigned download URL on success")
 	}
+}
+
+// startAPIServer starts a real Hertz server exposing the report export routes
+// (as in app/api) on a random loopback port and returns its address.
+func startAPIServer(t *testing.T, uc usecase.Report) string {
+	t.Helper()
+
+	h, err := apihandler.New(uc)
+	if err != nil {
+		t.Fatalf("api handler: %v", err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	engine := server.New(server.WithListener(ln), server.WithExitWaitTime(10*time.Millisecond))
+	engine.POST(constant.RouteExportReport, h.RequestExportReport)
+	engine.GET(constant.RouteExportReportJob, h.GetExportReportJob)
+
+	go func() { _ = engine.Run() }()
+	for i := 0; i < 100; i++ {
+		if engine.IsRunning() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Cleanup(func() { _ = engine.Shutdown(context.Background()) })
+	return ln.Addr().String()
+}
+
+// httpDoJSON performs an HTTP request, optionally JSON-encodes body, and
+// decodes the JSON response into out (when non-nil). It returns the status code.
+func httpDoJSON(t *testing.T, method, url string, body any, out any) int {
+	t.Helper()
+
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		reader = strings.NewReader(string(raw))
+	}
+
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	if out != nil {
+		if err := json.Unmarshal(data, out); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+	}
+	return resp.StatusCode
 }

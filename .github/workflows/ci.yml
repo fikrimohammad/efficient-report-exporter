@@ -111,6 +111,19 @@ jobs:
       - name: Start infrastructure
         run: docker compose up -d
 
+      # The broker auto-creates a topic only on first publish, but the e2e
+      # consumer needs the topic's route info at Start. Create it explicitly
+      # once the broker is registered with the name server.
+      - name: Create RocketMQ topic
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose exec -T rocketmq-broker sh mqadmin updateTopic -n rocketmq-namesrv:9876 -t reporting -c DefaultCluster -r 8 -w 8; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "RocketMQ broker/namesrv did not become ready" && exit 1
+
       - name: Wait for MySQL
         run: |
           for i in $(seq 1 60); do
