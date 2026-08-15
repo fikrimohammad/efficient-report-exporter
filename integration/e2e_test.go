@@ -3,12 +3,17 @@
 package integration
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,12 +35,58 @@ import (
 	rocketmqproducer "github.com/fikrimohammad/go-dev-sdk/rocketmq/producer"
 )
 
-// TestEndToEndExportThroughRocketMQ exercises the full asynchronous flow through
-// the public HTTP API and the real queue: POST /v1/reports/export publishes a
-// process message to RocketMQ, a real consumer consumes it and runs the export
-// pipeline, and GET /v1/reports/export/:job_id then reports success with a
-// presigned download URL.
+// e2eBenchDetail mirrors the three fee details that seedBenchRows writes per
+// report row, so the expected CSV rows can be reconstructed independently.
+type e2eBenchDetail struct {
+	categoryID         int64
+	productID          int64
+	productPriceAmount string
+	promoAmount        string
+	feeBaseAmount      string
+	feeFinalAmount     string
+}
+
+var e2eBenchDetails = []e2eBenchDetail{
+	{categoryID: 1, productID: 1, productPriceAmount: "9.99", promoAmount: "1", feeBaseAmount: "8.99", feeFinalAmount: "0.5"},
+	{categoryID: 2, productID: 2, productPriceAmount: "19.99", promoAmount: "0", feeBaseAmount: "19.99", feeFinalAmount: "1.5"},
+	{categoryID: 3, productID: 3, productPriceAmount: "29.99", promoAmount: "0", feeBaseAmount: "29.99", feeFinalAmount: "2"},
+}
+
+type e2eFlowConfig struct {
+	shopID            int64
+	rowCount          int
+	maxSingleFileRows int
+}
+
+// TestEndToEndExportThroughRocketMQ exercises the single-file (CSV) export path
+// end-to-end: POST /v1/reports/export publishes to RocketMQ, a real consumer
+// runs the pipeline, and the downloaded CSV is verified against the seed data.
 func TestEndToEndExportThroughRocketMQ(t *testing.T) {
+	data, expected := runExportFlow(t, e2eFlowConfig{
+		shopID:            424299,
+		rowCount:          100,
+		maxSingleFileRows: constant.DefaultMaxSingleFileRows,
+	})
+	verifyReportFile(t, data, expected)
+}
+
+// TestEndToEndExportThroughRocketMQZipped exercises the batched (ZIP) export
+// path by capping max_single_file_rows below the seeded row count.
+func TestEndToEndExportThroughRocketMQZipped(t *testing.T) {
+	data, expected := runExportFlow(t, e2eFlowConfig{
+		shopID:            424300,
+		rowCount:          100,
+		maxSingleFileRows: 10,
+	})
+	verifyReportFile(t, data, expected)
+}
+
+// runExportFlow drives the full asynchronous export through the HTTP API and
+// the real queue, then downloads the produced report file. It returns the raw
+// file bytes and the expected CSV data rows for the seeded report.
+func runExportFlow(t *testing.T, cfg e2eFlowConfig) ([]byte, [][]string) {
+	t.Helper()
+
 	ctx := context.Background()
 	d := setupDeps(t)
 
@@ -70,7 +121,7 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 		t.Fatalf("mq repo: %v", err)
 	}
 
-	dl := newDynamicLoader(t, constant.DefaultMaxSingleFileRows, constant.DefaultMaxBatchPipelineWorkers)
+	dl := newDynamicLoader(t, cfg.maxSingleFileRows, constant.DefaultMaxBatchPipelineWorkers)
 	t.Cleanup(func() { _ = dl.Stop() })
 
 	uc, err := reportusecase.New(d.mysqlRepo, mqRepo, redisRepo, d.s3Repo, dl)
@@ -78,11 +129,9 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 		t.Fatalf("report use case: %v", err)
 	}
 
-	// A dedicated shop so this test never collides with the benchmark data.
-	shopID := int64(424299)
 	start := benchStart
 	end := benchStart.Add(24 * time.Hour)
-	if err := seedBenchRows(ctx, d.rawDB, shopID, 100, start, end); err != nil {
+	if err := seedBenchRows(ctx, d.rawDB, cfg.shopID, cfg.rowCount, start, end); err != nil {
 		t.Fatalf("seed report rows: %v", err)
 	}
 
@@ -118,7 +167,7 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 	var exportResp apimodel.ExportReportResponse
 	status := httpDoJSON(t, http.MethodPost, baseURL+constant.RouteExportReport, apimodel.ExportReportRequest{
 		RequestID: strconv.FormatInt(time.Now().UnixNano(), 10),
-		ShopID:    strconv.FormatInt(shopID, 10),
+		ShopID:    strconv.FormatInt(cfg.shopID, 10),
 		StartTime: start.Format(time.RFC3339),
 		EndTime:   end.Format(time.RFC3339),
 	}, &exportResp)
@@ -157,7 +206,7 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 
 	// Verify the list endpoint surfaces the completed job.
 	var listResp apimodel.ListExportReportJobsResponse
-	status = httpDoJSON(t, http.MethodGet, fmt.Sprintf("%s%s?shop_id=%d", baseURL, constant.RouteExportReportJobs, shopID), nil, &listResp)
+	status = httpDoJSON(t, http.MethodGet, fmt.Sprintf("%s%s?shop_id=%d", baseURL, constant.RouteExportReportJobs, cfg.shopID), nil, &listResp)
 	if status != http.StatusOK {
 		t.Fatalf("GET jobs returned %d", status)
 	}
@@ -177,6 +226,8 @@ func TestEndToEndExportThroughRocketMQ(t *testing.T) {
 	if !found {
 		t.Fatalf("expected the created job %s in the list, got %+v", exportResp.Data.JobID, listResp.Data.Jobs)
 	}
+
+	return downloadFile(t, jobData.DownloadURL), expectedReportCSVRows(cfg.shopID, cfg.rowCount, start, end)
 }
 
 // startAPIServer starts a real Hertz server exposing the report export routes
@@ -249,4 +300,135 @@ func httpDoJSON(t *testing.T, method, url string, body any, out any) int {
 		}
 	}
 	return resp.StatusCode
+}
+
+// downloadFile fetches the report file from its presigned URL.
+func downloadFile(t *testing.T, url string) []byte {
+	t.Helper()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("download report: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("download report returned %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	return data
+}
+
+// expectedReportCSVRows reconstructs the CSV data rows that seedBenchRows
+// produces for (shopID, n) rows across [start, end), in settlement-time order.
+func expectedReportCSVRows(shopID int64, n int, start, end time.Time) [][]string {
+	step := end.Sub(start) / time.Duration(n)
+	rows := make([][]string, 0, n*benchDetailsPerRow)
+	for i := 0; i < n; i++ {
+		settle := start.Add(time.Duration(i) * step)
+		pay := settle.Add(-time.Hour)
+		create := pay.Add(-30 * time.Minute)
+		for k, d := range e2eBenchDetails {
+			rows = append(rows, []string{
+				strconv.FormatInt(shopID, 10),
+				strconv.FormatInt(int64(i+1), 10), // fee id
+				strconv.FormatInt(int64(i+1), 10), // order id
+				create.Format(constant.ReportLineTimeFormat),
+				pay.Format(constant.ReportLineTimeFormat),
+				settle.Format(constant.ReportLineTimeFormat),
+				strconv.FormatInt(int64(i*benchDetailsPerRow+k+1), 10), // order detail id
+				strconv.FormatInt(d.productID, 10),
+				strconv.FormatInt(d.categoryID, 10),
+				d.productPriceAmount,
+				d.promoAmount,
+				d.feeBaseAmount,
+				d.feeFinalAmount,
+			})
+		}
+	}
+	return rows
+}
+
+// verifyReportFile checks that a downloaded report file (CSV or ZIP) has the
+// expected header and data rows.
+func verifyReportFile(t *testing.T, data []byte, expected [][]string) {
+	t.Helper()
+
+	headers, rows := parseReportFile(t, data)
+	for _, h := range headers {
+		if !slices.Equal(h, constant.ReportFileCSVHeaders) {
+			t.Fatalf("unexpected CSV header:\n got  %v\n want %v", h, constant.ReportFileCSVHeaders)
+		}
+	}
+	if len(rows) != len(expected) {
+		t.Fatalf("expected %d data rows, got %d", len(expected), len(rows))
+	}
+	for i := range expected {
+		if !slices.Equal(rows[i], expected[i]) {
+			t.Fatalf("row %d mismatch:\n want %v\n got  %v", i, expected[i], rows[i])
+		}
+	}
+}
+
+// parseReportFile parses a report file into its header row(s) and data rows,
+// handling both the single-file CSV and the batched ZIP (whose batch entries
+// each carry their own header).
+func parseReportFile(t *testing.T, data []byte) (headers [][]string, rows [][]string) {
+	t.Helper()
+	if isZip(data) {
+		return parseZipReport(t, data)
+	}
+	h, r := parseCSVData(t, data)
+	return [][]string{h}, r
+}
+
+func isZip(data []byte) bool {
+	return len(data) >= 2 && data[0] == 'P' && data[1] == 'K'
+}
+
+func parseZipReport(t *testing.T, data []byte) ([][]string, [][]string) {
+	t.Helper()
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	files := append([]*zip.File(nil), zr.File...)
+	// Entry names encode the batch time range and sort lexicographically into
+	// chronological order; the write order across concurrent batches is not
+	// deterministic.
+	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+
+	var headers [][]string
+	var rows [][]string
+	for _, f := range files {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open zip entry %s: %v", f.Name, err)
+		}
+		b, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("read zip entry %s: %v", f.Name, err)
+		}
+		h, r := parseCSVData(t, b)
+		headers = append(headers, h)
+		rows = append(rows, r...)
+	}
+	return headers, rows
+}
+
+func parseCSVData(t *testing.T, data []byte) (header []string, rows [][]string) {
+	t.Helper()
+
+	records, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+	if err != nil {
+		t.Fatalf("parse csv: %v", err)
+	}
+	if len(records) == 0 {
+		t.Fatal("empty csv file")
+	}
+	return records[0], records[1:]
 }
