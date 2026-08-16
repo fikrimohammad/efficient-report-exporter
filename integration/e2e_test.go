@@ -232,7 +232,7 @@ func runExportFlow(t *testing.T, cfg e2eFlowConfig) ([]byte, [][]string) {
 
 // startAPIServer starts a real Hertz server exposing the report export routes
 // (as in app/api) on a random loopback port and returns its address.
-func startAPIServer(t *testing.T, uc usecase.Report) string {
+func startAPIServer(t testing.TB, uc usecase.Report) string {
 	t.Helper()
 
 	h, err := apihandler.New(uc)
@@ -264,7 +264,7 @@ func startAPIServer(t *testing.T, uc usecase.Report) string {
 
 // httpDoJSON performs an HTTP request, optionally JSON-encodes body, and
 // decodes the JSON response into out (when non-nil). It returns the status code.
-func httpDoJSON(t *testing.T, method, url string, body any, out any) int {
+func httpDoJSON(t testing.TB, method, url string, body any, out any) int {
 	t.Helper()
 
 	var reader io.Reader
