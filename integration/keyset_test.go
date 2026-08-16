@@ -15,7 +15,7 @@ import (
 // TestKeysetPaginationReturnsCorrectRows verifies the composite
 // (order_settlement_time, id) keyset cursor against a real MySQL: every row in
 // the range is returned exactly once, in (settlement, id) order, with correct
-// handling of settlement-time ties and the inclusive end boundary — across page
+// handling of settlement-time ties and the exclusive end boundary — across page
 // boundaries that fall *inside* a tie group.
 //
 // It drives the repository directly, mirroring the cursor-advancement loop of
@@ -96,7 +96,7 @@ type orderedRow struct {
 // seedKeysetRows inserts a deterministic set of rows for the shop. Settlement
 // times are deliberately inserted *out of order* (so id order ≠ settlement
 // order), with a 5-row settlement tie at the start (larger than the page size)
-// and one row exactly at `end` to exercise the inclusive boundary.
+// and one row exactly at `end` to verify the exclusive end boundary excludes it.
 func seedKeysetRows(t *testing.T, rawDB *sql.DB, shopID int64, start time.Time) {
 	t.Helper()
 	ctx := context.Background()
@@ -132,7 +132,7 @@ func queryOrderedRows(t *testing.T, rawDB *sql.DB, shopID int64, start, end time
 	t.Helper()
 	rows, err := rawDB.QueryContext(context.Background(),
 		`SELECT id, order_settlement_time FROM report
-		 WHERE shop_id = ? AND order_settlement_time >= ? AND order_settlement_time <= ?
+		 WHERE shop_id = ? AND order_settlement_time >= ? AND order_settlement_time < ?
 		 ORDER BY order_settlement_time ASC, id ASC`,
 		shopID, start, end)
 	if err != nil {
