@@ -1,0 +1,77 @@
+package mq
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/fikrimohammad/efficient-report-exporter/internal/constant"
+	mqmodel "github.com/fikrimohammad/efficient-report-exporter/internal/model/mq"
+	"github.com/fikrimohammad/go-dev-sdk/errs/v2"
+	"go.uber.org/mock/gomock"
+)
+
+func TestPublishExportReportDoneMsg_Success(t *testing.T) {
+	producer := newMockProducerClient(t)
+
+	var topic, tag, key string
+	var message []byte
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, tpc, tg, k string, m []byte) error {
+			topic, tag, key, message = tpc, tg, k, m
+			return nil
+		})
+
+	repo, err := New(producer)
+	if err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+
+	err = repo.PublishExportReportDoneMsg(context.Background(), mqmodel.ExportReportDoneMessage{
+		JobID: "99",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if topic != "reporting" {
+		t.Errorf("expected topic 'reporting', got %s", topic)
+	}
+	if tag != "export_report_done" {
+		t.Errorf("expected tag 'export_report_done', got %s", tag)
+	}
+	if key != "99" {
+		t.Errorf("expected key '99', got %s", key)
+	}
+	if len(message) == 0 {
+		t.Error("expected non-empty message")
+	}
+}
+
+func TestPublishExportReportDoneMsg_PublishError(t *testing.T) {
+	producer := newMockProducerClient(t)
+	producer.EXPECT().
+		PublishSync(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(errors.New("publish failed"))
+
+	repo, err := New(producer)
+	if err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+
+	err = repo.PublishExportReportDoneMsg(context.Background(), mqmodel.ExportReportDoneMessage{
+		JobID: "99",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var e *errs.Error
+	if !errors.As(err, &e) {
+		t.Fatalf("expected *errs.Error, got %T", err)
+	}
+	if e.Code() != constant.MQInternal {
+		t.Errorf("expected code MQInternal, got %v", e.Code())
+	}
+}

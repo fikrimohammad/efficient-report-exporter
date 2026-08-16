@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/constant"
-	"github.com/fikrimohammad/efficient-report-exporter/model"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
-	"github.com/fikrimohammad/efficient-report-exporter/usecase"
-	reportusecase "github.com/fikrimohammad/efficient-report-exporter/usecase/report"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/model"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/repository"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/usecase"
+	reportusecase "github.com/fikrimohammad/efficient-report-exporter/internal/usecase/report"
 )
 
 // realBenchEnv bundles the exported report use case (backed by real MySQL and

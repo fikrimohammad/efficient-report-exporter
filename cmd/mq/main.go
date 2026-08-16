@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/fikrimohammad/efficient-report-exporter/app"
-	appmq "github.com/fikrimohammad/efficient-report-exporter/app/mq"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/app"
+	appmq "github.com/fikrimohammad/efficient-report-exporter/internal/app/mq"
 	_ "github.com/go-sql-driver/mysql"
 )
 

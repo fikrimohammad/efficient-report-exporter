@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fikrimohammad/efficient-report-exporter/model"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/model"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/repository"
 )
 
 // TestKeysetPaginationReturnsCorrectRows verifies the composite

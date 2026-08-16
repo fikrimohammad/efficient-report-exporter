@@ -13,6 +13,7 @@ require (
 	github.com/cloudwego/hertz v0.10.6
 	github.com/djherbis/buffer v1.2.0
 	github.com/djherbis/nio/v3 v3.0.1
+	github.com/fikrimohammad/go-dev-sdk/errs/v2 v2.0.0
 	github.com/fikrimohammad/go-typedpipe/v2 v2.0.5
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/godruoyi/go-snowflake v0.0.2
@@ -74,7 +75,7 @@ require (
 	github.com/fikrimohammad/go-dev-sdk/confloader v1.0.0
 	github.com/fikrimohammad/go-dev-sdk/db v1.0.0
 	github.com/fikrimohammad/go-dev-sdk/errgroup v1.0.0
-	github.com/fikrimohammad/go-dev-sdk/errs v1.0.0
+	github.com/fikrimohammad/go-dev-sdk/errs v1.0.0 // indirect
 	github.com/fikrimohammad/go-dev-sdk/observability v1.0.0
 	github.com/fikrimohammad/go-dev-sdk/redis v1.0.0
 	github.com/fikrimohammad/go-dev-sdk/rocketmq v1.0.0

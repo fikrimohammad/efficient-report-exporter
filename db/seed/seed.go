@@ -13,7 +13,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	snowflake "github.com/godruoyi/go-snowflake"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/config"
 )
 
 type feeDetail struct {

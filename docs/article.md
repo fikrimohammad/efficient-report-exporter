@@ -86,23 +86,23 @@ flowchart LR
     end
 
     subgraph composition["Composition"]
-        APP["app/resource.go"]
+        APP["internal/app/resource.go"]
     end
 
     subgraph handlers["Handlers"]
-        H1["handler/api"]
-        H2["handler/mq"]
+        H1["internal/handler/api"]
+        H2["internal/handler/mq"]
     end
 
     subgraph usecases["Use cases"]
-        UC["usecase/report"]
+        UC["internal/usecase/report"]
     end
 
     subgraph repos["Repositories"]
-        R1["repository/mysql"]
-        R2["repository/redis"]
-        R3["repository/s3"]
-        R4["repository/mq"]
+        R1["internal/repository/mysql"]
+        R2["internal/repository/redis"]
+        R3["internal/repository/s3"]
+        R4["internal/repository/mq"]
     end
 
     subgraph infra["Infrastructure"]

@@ -11,7 +11,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/config"
 )
 
 func main() {
