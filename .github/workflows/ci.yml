@@ -91,6 +91,25 @@ jobs:
           path: coverage.out
           if-no-files-found: error
 
+  race:
+    name: Race Detector
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The race detector requires cgo (CGO_ENABLED=1); ubuntu-latest ships gcc.
+      # -gcflags="all=-N -l" keeps the mockey test doubles in common/observability
+      # effective (see the test job) and is compatible with -race.
+      - name: Test with race detector
+        run: go test -race -count=1 -gcflags="all=-N -l" ./...
+
   integration:
     name: Integration Tests (MySQL + MinIO + Redis + RocketMQ)
     # Heavy job (MySQL + MinIO + Redis + RocketMQ + migrations): pre-submit on
@@ -141,6 +160,8 @@ jobs:
             docker compose exec -T mysql mysql -uroot -proot efficient_report_exporter < "$f"
           done
 
+      # -race exercises the pipeline's concurrent stages (fetch/line/CSV/zip/
+      # upload) and the Redis export-process lock under the race detector.
       - name: Run integration tests
         env:
           TEST_DB_HOST: 127.0.0.1
@@ -155,7 +176,7 @@ jobs:
           TEST_REDIS_HOST: 127.0.0.1
           TEST_REDIS_PORT: "6379"
           TEST_MQ_NAMESRV: 127.0.0.1:9876
-        run: go test -tags integration -count=1 ./integration/
+        run: go test -race -tags integration -count=1 ./integration/
 
       - name: Collect container logs on failure
         if: failure()
