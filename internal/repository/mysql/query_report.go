@@ -93,10 +93,10 @@ func buildReportConditions(filter repository.QueryReportFilter) reportConditions
 		}
 	}
 
-	if filter.LastOrderSettlementTime != nil && !filter.LastOrderSettlementTime.IsZero() {
+	if filter.HasCursor {
 		w.clauses = append(w.clauses,
 			"(order_settlement_time > :last_order_settlement_time OR (order_settlement_time = :last_order_settlement_time AND id > :last_report_id))")
-		w.args["last_order_settlement_time"] = *filter.LastOrderSettlementTime
+		w.args["last_order_settlement_time"] = filter.LastOrderSettlementTime
 		w.args["last_report_id"] = filter.LastReportID
 	}
 

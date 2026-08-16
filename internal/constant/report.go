@@ -39,7 +39,7 @@ const (
 )
 
 const (
-	DefaultQueryLimitPerPage       = 1000
+	DefaultQueryLimitPerPage       = 2000
 	DefaultMaxTimeRangePerBatch    = 2 * time.Hour
 	DefaultMaxBatchPipelineWorkers = 8
 	DefaultMaxSingleFileRows       = 100_000

@@ -39,10 +39,7 @@ func TestProcessExportReport_FullPipelineSuccess(t *testing.T) {
 			OrderPaymentTime:    time.Date(2025, 1, 1, 11, 0, 0, 0, time.UTC),
 			OrderSettlementTime: time.Date(2025, 1, 2, 12, 0, 0, 0, time.UTC),
 			FeeID:               10,
-			Details: model.ReportFeeDetails{
-				{OrderDetailID: 1, CategoryID: 100, ProductID: 1000, ProductPriceAmount: 10.5, PromoAmount: 1.0, FeeBaseAmount: 9.5, FeeFinalAmount: 9.0},
-				{OrderDetailID: 2, CategoryID: 200, ProductID: 2000, ProductPriceAmount: 20.0, PromoAmount: 2.0, FeeBaseAmount: 18.0, FeeFinalAmount: 17.0},
-			},
+			Details:             []byte(`[{"order_detail_id":1,"category_id":100,"product_id":1000,"product_price_amount":10.5,"promo_amount":1,"fee_base_amount":9.5,"fee_final_amount":9},{"order_detail_id":2,"category_id":200,"product_id":2000,"product_price_amount":20,"promo_amount":2,"fee_base_amount":18,"fee_final_amount":17}]`),
 		},
 		{
 			ID: 2, ShopID: 100, OrderID: 2,
@@ -50,9 +47,7 @@ func TestProcessExportReport_FullPipelineSuccess(t *testing.T) {
 			OrderPaymentTime:    time.Date(2025, 1, 1, 15, 0, 0, 0, time.UTC),
 			OrderSettlementTime: time.Date(2025, 1, 2, 16, 0, 0, 0, time.UTC),
 			FeeID:               11,
-			Details: model.ReportFeeDetails{
-				{OrderDetailID: 3, CategoryID: 300, ProductID: 3000, ProductPriceAmount: 30.0, PromoAmount: 3.0, FeeBaseAmount: 27.0, FeeFinalAmount: 26.0},
-			},
+			Details:             []byte(`[{"order_detail_id":3,"category_id":300,"product_id":3000,"product_price_amount":30,"promo_amount":3,"fee_base_amount":27,"fee_final_amount":26}]`),
 		},
 	}
 
@@ -414,10 +409,7 @@ func TestAsyncBuildReportLine_FlattensDetails(t *testing.T) {
 	err = reportWriter.Write(ctx, model.Report{
 		ID: 1, ShopID: 100, OrderID: 1001, FeeID: 10,
 		OrderSettlementTime: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC),
-		Details: model.ReportFeeDetails{
-			{OrderDetailID: 1, ProductID: 1, FeeFinalAmount: 10.0},
-			{OrderDetailID: 2, ProductID: 2, FeeFinalAmount: 20.0},
-		},
+		Details:             []byte(`[{"order_detail_id":1,"product_id":1,"fee_final_amount":10},{"order_detail_id":2,"product_id":2,"fee_final_amount":20}]`),
 	})
 	if err != nil {
 		t.Fatalf("write report: %v", err)

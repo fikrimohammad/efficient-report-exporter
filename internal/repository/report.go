@@ -10,16 +10,18 @@ import (
 	mqmodel "github.com/fikrimohammad/efficient-report-exporter/internal/model/mq"
 )
 
-const MaxQueryReportLimit = 1000
+const MaxQueryReportLimit = 2000
 
 type QueryReportFilter struct {
 	ShopID                   *int64                `json:"shop_id"`
 	OrderSettlementTimeRange *QueryReportTimeRange `json:"order_settlement_time_range"`
 	Limit                    int                   `json:"limit"`
-	// Keyset cursor over the (order_settlement_time, id) index prefix. Set both
-	// together (or neither) to page without OFFSET.
-	LastOrderSettlementTime *time.Time `json:"last_order_settlement_time"`
-	LastReportID            int64      `json:"last_report_id"`
+	// Keyset cursor over the (order_settlement_time, id) index prefix. When
+	// HasCursor is true, LastOrderSettlementTime and LastReportID hold the last
+	// page's final row; set HasCursor to page without OFFSET.
+	LastOrderSettlementTime time.Time `json:"last_order_settlement_time"`
+	LastReportID            int64     `json:"last_report_id"`
+	HasCursor               bool      `json:"has_cursor"`
 }
 
 type QueryReportTimeRange struct {
