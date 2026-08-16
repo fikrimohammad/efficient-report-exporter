@@ -133,6 +133,8 @@ github.com/fikrimohammad/go-dev-sdk/errgroup v1.0.0 h1:a6mLY98FSpw5HVc+VBeBtcNkh
 github.com/fikrimohammad/go-dev-sdk/errgroup v1.0.0/go.mod h1:cbraljuAuCeO864QJvaqNmycfAvee4hWNoo8y07j208=
 github.com/fikrimohammad/go-dev-sdk/errs v1.0.0 h1:1w8uJfXxa/qr4bWo2/DdQ/qkqs6qpxcz+L5VUkV4XTg=
 github.com/fikrimohammad/go-dev-sdk/errs v1.0.0/go.mod h1:Srkejgb94UKhmRdUEKQKb1AEIHXMQFHg4b/LR3yK9iA=
+github.com/fikrimohammad/go-dev-sdk/errs/v2 v2.0.0 h1:cDXtFfhFzPj8cZ5hhSx5uTj/Rf9Rx9KM+s4GMRF3RKQ=
+github.com/fikrimohammad/go-dev-sdk/errs/v2 v2.0.0/go.mod h1:XSon2ZWGv4EFy7vKSRObo4fV6zpPf4TRwlCHJRw31Aw=
 github.com/fikrimohammad/go-dev-sdk/observability v1.0.0 h1:T80zrhCQar+u3z59g3uh5/e2C6yMWa6JOcnftdMrGos=
 github.com/fikrimohammad/go-dev-sdk/observability v1.0.0/go.mod h1:yDu3twDo8cPctyMR0OmbZfO1gcCH+mPRZq23zKTVDrc=
 github.com/fikrimohammad/go-dev-sdk/redis v1.0.0 h1:aevGzxKKSxJ4vUo2YnbAb8ynCWTp107Mh/wI919qVfk=

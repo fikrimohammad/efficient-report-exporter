@@ -176,15 +176,15 @@ The codebase follows a layered (clean-architecture style) layout:
 | Layer | Path | Responsibility |
 | --- | --- | --- |
 | Entrypoints | `cmd/api`, `cmd/mq` | Bootstrap, lifecycle, graceful shutdown |
-| Composition | `app` | Wire config, clients, repositories, and use cases into `app.Resource` |
-| HTTP handlers | `handler/api` | Parse/validate requests, map errors to HTTP responses |
-| MQ handlers | `handler/mq` | Decode messages, invoke use cases |
-| Use cases | `usecase/report` | Business logic: request, process, get, list |
-| Repositories | `repository/{mysql,redis,s3,mq}` | Data access / outbound side effects |
-| Error codes | `apperrors` | Application error codes (extends the SDK's `errs` codes) |
-| Test doubles | `internal/mocks` | gomock mocks for the app and SDK interfaces (regenerate with `make gen-mock`) |
+| Composition | `internal/app` | Wire config, clients, repositories, and use cases into `app.Resource` |
+| HTTP handlers | `internal/handler/api` | Parse/validate requests, map errors to HTTP responses |
+| MQ handlers | `internal/handler/mq` | Decode messages, invoke use cases |
+| Use cases | `internal/usecase/report` | Business logic: request, process, get, list |
+| Repositories | `internal/repository/{mysql,redis,s3,mq}` | Data access / outbound side effects |
+| Error codes | `internal/constant/error.go` | Application error codes and HTTP mapping (plain integers, per the `errs/v2` SDK) |
+| Test doubles | `internal/mock` | gomock mocks for the app and SDK interfaces (regenerate with `make gen-mock`) |
 | Shared libs | `go-dev-sdk` (vendored) | `apiserver`, `db`, `redis`, `s3`, `rocketmq`, `confloader`, `observability`, `errs`, `errgroup` |
-| Contracts | `idl/api`, `model/api` | Thrift IDL and generated request/response models |
+| Contracts | `idl/api`, `idl/mq`, `internal/model/api`, `internal/model/mq` | Thrift IDL and generated request/response models |
 | Integration tests | `integration` | Opt-in tests/benchmarks against real MySQL + MinIO (`-tags integration`) |
 
 The two deployable binaries (`cmd/api`, `cmd/mq`) are thin entrypoints over a shared composition root:
@@ -197,23 +197,23 @@ flowchart LR
     end
 
     subgraph composition["Composition"]
-        APP["app/resource.go"]
+        APP["internal/app/resource.go"]
     end
 
     subgraph handlers["Handlers"]
-        H1["handler/api"]
-        H2["handler/mq"]
+        H1["internal/handler/api"]
+        H2["internal/handler/mq"]
     end
 
     subgraph usecases["Use cases"]
-        UC["usecase/report"]
+        UC["internal/usecase/report"]
     end
 
     subgraph repos["Repositories"]
-        R1["repository/mysql"]
-        R2["repository/redis"]
-        R3["repository/s3"]
-        R4["repository/mq"]
+        R1["internal/repository/mysql"]
+        R2["internal/repository/redis"]
+        R3["internal/repository/s3"]
+        R4["internal/repository/mq"]
     end
 
     subgraph infra["Infrastructure"]

@@ -20,12 +20,12 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/fikrimohammad/efficient-report-exporter/config"
-	"github.com/fikrimohammad/efficient-report-exporter/constant"
-	"github.com/fikrimohammad/efficient-report-exporter/internal/mocks"
-	"github.com/fikrimohammad/efficient-report-exporter/repository"
-	mysqlrepository "github.com/fikrimohammad/efficient-report-exporter/repository/mysql"
-	s3repository "github.com/fikrimohammad/efficient-report-exporter/repository/s3"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/config"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/constant"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/mock"
+	"github.com/fikrimohammad/efficient-report-exporter/internal/repository"
+	mysqlrepository "github.com/fikrimohammad/efficient-report-exporter/internal/repository/mysql"
+	s3repository "github.com/fikrimohammad/efficient-report-exporter/internal/repository/s3"
 	"github.com/fikrimohammad/go-dev-sdk/confloader"
 	"github.com/fikrimohammad/go-dev-sdk/db"
 	commonredis "github.com/fikrimohammad/go-dev-sdk/redis"
@@ -212,18 +212,18 @@ func setupDeps(t testing.TB) *deps {
 }
 
 // newMockMQ returns a repository.MQ mock that accepts any publish call.
-func newMockMQ(t testing.TB) *mocks.MockMQ {
+func newMockMQ(t testing.TB) *mock.MockMQ {
 	t.Helper()
-	mq := mocks.NewMockMQ(gomock.NewController(t))
+	mq := mock.NewMockMQ(gomock.NewController(t))
 	mq.EXPECT().PublishExportReportDoneMsg(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mq.EXPECT().PublishExportReportProcessMsg(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	return mq
 }
 
 // newMockRedis returns a repository.Redis mock whose lock/unlock always succeed.
-func newMockRedis(t testing.TB) *mocks.MockRedis {
+func newMockRedis(t testing.TB) *mock.MockRedis {
 	t.Helper()
-	r := mocks.NewMockRedis(gomock.NewController(t))
+	r := mock.NewMockRedis(gomock.NewController(t))
 	r.EXPECT().LockExportReportProcess(gomock.Any(), gomock.Any()).Return("token", nil).AnyTimes()
 	r.EXPECT().UnlockExportReportProcess(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	r.EXPECT().LockExportReportRequest(gomock.Any(), gomock.Any()).Return("token", nil).AnyTimes()
@@ -232,7 +232,7 @@ func newMockRedis(t testing.TB) *mocks.MockRedis {
 }
 
 func newDynamicLoader(t testing.TB, maxSingleFileRows, maxBatchWorkers int) *confloader.Loader[config.DynamicConfig] {
-	mc := mocks.NewConfigClient(map[string]string{
+	mc := mock.NewConfigClient(map[string]string{
 		"process_export_report/query_limit_per_page":       "1000",
 		"process_export_report/max_time_range_per_batch":   "2h0m0s",
 		"process_export_report/max_batch_pipeline_workers": fmt.Sprintf("%d", maxBatchWorkers),

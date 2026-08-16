@@ -36,17 +36,17 @@ gen-model:
 	else \
 		for file in $(THRIFT_FILES); do \
 			echo "Generating model for $$file"; \
-			hz model -idl $$file -model_dir model; \
+			hz model -idl $$file -model_dir internal/model; \
 		done; \
 	fi
 
-# Clean generated API models
+# Clean generated API and MQ models
 clean-gen:
-	rm -rf model/api
+	rm -rf internal/model/api internal/model/mq
 
 # Regenerate gomock mocks for the application and SDK interfaces
 gen-mock:
-	go generate ./internal/mocks/
+	go generate ./internal/mock/
 
 # Database migrations (reads config + Infisical secrets like the app does)
 db/migrate-up:
