@@ -208,11 +208,11 @@ func (e *reportExporter) asyncBuildReportCSVFile(
 	return reportFileReader, nil
 }
 
-// compressReportCSV deflates the batch's CSV in the calling (batch worker)
+// compressReportCSVFile deflates the batch's CSV in the calling (batch worker)
 // goroutine, computing the CRC32 and sizes required to write the entry via
 // zip.Writer.CreateRaw. This moves the CPU-bound deflate off the single zip
 // goroutine and onto the parallel batch workers.
-func compressReportCSV(name string, csv io.ReadCloser) (model.ReportBatchFile, error) {
+func (e *reportExporter) compressReportCSVFile(name string, csv io.ReadCloser) (model.ReportBatchFile, error) {
 	var buf bytes.Buffer
 	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
 	if err != nil {
@@ -275,7 +275,7 @@ func (e *reportExporter) asyncBuildReportBatchFiles(
 					return csvErr
 				}
 
-				compressed, compErr := compressReportCSV(b.EntryName(), csv)
+				compressed, compErr := e.compressReportCSVFile(b.EntryName(), csv)
 				if compErr != nil {
 					return compErr
 				}

@@ -79,11 +79,11 @@ func TestAsyncZipReportBatchFiles_ZipsEntries(t *testing.T) {
 		t.Fatalf("asyncZipReportBatchFiles failed: %v", err)
 	}
 
-	b1, err := compressReportCSV("batch_1.csv", io.NopCloser(strings.NewReader("a,b\n1,2\n")))
+	b1, err := re.compressReportCSVFile("batch_1.csv", io.NopCloser(strings.NewReader("a,b\n1,2\n")))
 	if err != nil {
 		t.Fatalf("compress batch 1: %v", err)
 	}
-	b2, err := compressReportCSV("batch_2.csv", io.NopCloser(strings.NewReader("a,b\n3,4\n")))
+	b2, err := re.compressReportCSVFile("batch_2.csv", io.NopCloser(strings.NewReader("a,b\n3,4\n")))
 	if err != nil {
 		t.Fatalf("compress batch 2: %v", err)
 	}

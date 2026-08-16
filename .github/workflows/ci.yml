@@ -114,9 +114,15 @@ jobs:
     name: Integration Tests (MySQL + MinIO + Redis + RocketMQ)
     # Heavy job (MySQL + MinIO + Redis + RocketMQ + migrations): pre-submit on
     # PRs to main, post-submit on main pushes, and the scheduled/manual runs.
-    # Skipped for ordinary feature-branch pushes.
+    # Skipped for ordinary feature-branch pushes. The race detector is enabled
+    # only on the scheduled/manual runs (the deep, non-PR-blocking check) to
+    # keep PR cycle time down.
     if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      # -race exercises the pipeline's concurrent stages (fetch/line/CSV/zip/
+      # upload) and the Redis export-process lock under the detector.
+      RACE_FLAG: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '-race' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,8 +166,6 @@ jobs:
             docker compose exec -T mysql mysql -uroot -proot efficient_report_exporter < "$f"
           done
 
-      # -race exercises the pipeline's concurrent stages (fetch/line/CSV/zip/
-      # upload) and the Redis export-process lock under the race detector.
       - name: Run integration tests
         env:
           TEST_DB_HOST: 127.0.0.1
@@ -176,7 +180,7 @@ jobs:
           TEST_REDIS_HOST: 127.0.0.1
           TEST_REDIS_PORT: "6379"
           TEST_MQ_NAMESRV: 127.0.0.1:9876
-        run: go test -race -tags integration -count=1 ./integration/
+        run: go test $RACE_FLAG -tags integration -count=1 ./integration/
 
       - name: Collect container logs on failure
         if: failure()
