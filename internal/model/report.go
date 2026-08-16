@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"time"
 
@@ -14,37 +13,19 @@ import (
 )
 
 type Report struct {
-	ID                  int64            `db:"id" json:"id"`
-	ShopID              int64            `db:"shop_id" json:"shop_id"`
-	OrderID             int64            `db:"order_id" json:"order_id"`
-	OrderCreationTime   time.Time        `db:"order_creation_time" json:"order_creation_time"`
-	OrderPaymentTime    time.Time        `db:"order_payment_time" json:"order_payment_time"`
-	OrderSettlementTime time.Time        `db:"order_settlement_time" json:"order_settlement_time"`
-	FeeID               int64            `db:"fee_id" json:"fee_id"`
-	Details             ReportFeeDetails `db:"details" json:"details"`
-	CreationTime        time.Time        `db:"creation_time" json:"creation_time"`
-	UpdateTime          time.Time        `db:"update_time" json:"update_time"`
+	ID                  int64     `db:"id" json:"id"`
+	ShopID              int64     `db:"shop_id" json:"shop_id"`
+	OrderID             int64     `db:"order_id" json:"order_id"`
+	OrderCreationTime   time.Time `db:"order_creation_time" json:"order_creation_time"`
+	OrderPaymentTime    time.Time `db:"order_payment_time" json:"order_payment_time"`
+	OrderSettlementTime time.Time `db:"order_settlement_time" json:"order_settlement_time"`
+	FeeID               int64     `db:"fee_id" json:"fee_id"`
+	Details             []byte    `db:"details" json:"details"`
+	CreationTime        time.Time `db:"creation_time" json:"creation_time"`
+	UpdateTime          time.Time `db:"update_time" json:"update_time"`
 }
 
 type ReportFeeDetails []ReportFeeDetail
-
-func (rfds *ReportFeeDetails) Scan(src any) error {
-	var source []byte
-	switch src := src.(type) {
-	case string:
-		source = []byte(src)
-	case []byte:
-		source = src
-	default:
-		return errors.New("incompatible type for ReportFeeDetails")
-	}
-
-	return sonic.Unmarshal(source, rfds)
-}
-
-func (rfds *ReportFeeDetails) Value() (driver.Value, error) {
-	return sonic.Marshal(rfds)
-}
 
 type ReportFeeDetail struct {
 	OrderDetailID      int64   `json:"order_detail_id"`
@@ -66,22 +47,38 @@ type ReportLine struct {
 	ReportFeeDetail
 }
 
-func (rl *ReportLine) ToCSVRow() []string {
-	return []string{
-		strconv.FormatInt(rl.ShopID, 10),
-		strconv.FormatInt(rl.FeeID, 10),
-		strconv.FormatInt(rl.OrderID, 10),
-		rl.OrderCreationTime.Format(constant.ReportLineTimeFormat),
-		rl.OrderPaymentTime.Format(constant.ReportLineTimeFormat),
-		rl.OrderSettlementTime.Format(constant.ReportLineTimeFormat),
-		strconv.FormatInt(rl.OrderDetailID, 10),
-		strconv.FormatInt(rl.ProductID, 10),
-		strconv.FormatInt(rl.CategoryID, 10),
-		strconv.FormatFloat(rl.ProductPriceAmount, 'f', -1, 64),
-		strconv.FormatFloat(rl.PromoAmount, 'f', -1, 64),
-		strconv.FormatFloat(rl.FeeBaseAmount, 'f', -1, 64),
-		strconv.FormatFloat(rl.FeeFinalAmount, 'f', -1, 64),
-	}
+// MarshalCSV appends rl's 13 CSV columns to dst, comma-separated, and returns
+// the extended buffer. Every column is an integer or a fixed-format timestamp
+// (constant.ReportLineTimeFormat), so none contains a comma, quote, or newline
+// and no CSV quoting is required. Append* formats into the caller's buffer, so
+// a reused buffer makes the row allocation-free.
+func (rl ReportLine) MarshalCSV(dst []byte) []byte {
+	dst = strconv.AppendInt(dst, rl.ShopID, 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendInt(dst, rl.FeeID, 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendInt(dst, rl.OrderID, 10)
+	dst = append(dst, ',')
+	dst = rl.OrderCreationTime.AppendFormat(dst, constant.ReportLineTimeFormat)
+	dst = append(dst, ',')
+	dst = rl.OrderPaymentTime.AppendFormat(dst, constant.ReportLineTimeFormat)
+	dst = append(dst, ',')
+	dst = rl.OrderSettlementTime.AppendFormat(dst, constant.ReportLineTimeFormat)
+	dst = append(dst, ',')
+	dst = strconv.AppendInt(dst, rl.OrderDetailID, 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendInt(dst, rl.ProductID, 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendInt(dst, rl.CategoryID, 10)
+	dst = append(dst, ',')
+	dst = strconv.AppendFloat(dst, rl.ProductPriceAmount, 'f', -1, 64)
+	dst = append(dst, ',')
+	dst = strconv.AppendFloat(dst, rl.PromoAmount, 'f', -1, 64)
+	dst = append(dst, ',')
+	dst = strconv.AppendFloat(dst, rl.FeeBaseAmount, 'f', -1, 64)
+	dst = append(dst, ',')
+	dst = strconv.AppendFloat(dst, rl.FeeFinalAmount, 'f', -1, 64)
+	return dst
 }
 
 // ReportBatch is a fixed time-range slice of a report export, processed as one
@@ -99,11 +96,16 @@ func (b ReportBatch) EntryName() string {
 		b.EndTime.Format(constant.ReportBatchTimeFormat))
 }
 
-// ReportBatchFile is the CSV artifact of a single date-range batch, streamed
-// into the zip stage. Name is the archive entry name; Reader carries the bytes.
+// ReportBatchFile is the deflate-compressed CSV artifact of a single
+// date-range batch. Each batch worker compresses its own CSV in parallel and
+// carries the pre-computed CRC32 and sizes, so the zip stage can write the
+// entry via CreateRaw without re-compressing.
 type ReportBatchFile struct {
-	Name   string
-	Reader io.ReadCloser
+	Name             string
+	Data             []byte
+	CRC32            uint32
+	CompressedSize   uint64
+	UncompressedSize uint64
 }
 
 type ExportReportJob struct {

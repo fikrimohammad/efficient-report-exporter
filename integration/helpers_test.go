@@ -233,7 +233,7 @@ func newMockRedis(t testing.TB) *mock.MockRedis {
 
 func newDynamicLoader(t testing.TB, maxSingleFileRows, maxBatchWorkers int) *confloader.Loader[config.DynamicConfig] {
 	mc := mock.NewConfigClient(map[string]string{
-		"process_export_report/query_limit_per_page":       "1000",
+		"process_export_report/query_limit_per_page":       "2000",
 		"process_export_report/max_time_range_per_batch":   "2h0m0s",
 		"process_export_report/max_batch_pipeline_workers": fmt.Sprintf("%d", maxBatchWorkers),
 		"process_export_report/max_single_file_rows":       fmt.Sprintf("%d", maxSingleFileRows),

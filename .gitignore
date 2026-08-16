@@ -35,3 +35,4 @@ seed
 .vscode/
 
 files/config/secret.yaml
+/bin

@@ -39,7 +39,8 @@ func TestKeysetPaginationReturnsCorrectRows(t *testing.T) {
 	const pageSize = 4 // first page boundary lands inside the 5-row tie at start
 	var (
 		lastID     int64
-		lastSettle *time.Time
+		lastSettle time.Time
+		hasCursor  bool
 		got        []*model.Report
 	)
 
@@ -53,6 +54,7 @@ func TestKeysetPaginationReturnsCorrectRows(t *testing.T) {
 			Limit:                   pageSize,
 			LastReportID:            lastID,
 			LastOrderSettlementTime: lastSettle,
+			HasCursor:               hasCursor,
 		})
 		if err != nil {
 			t.Fatalf("query page: %v", err)
@@ -64,8 +66,8 @@ func TestKeysetPaginationReturnsCorrectRows(t *testing.T) {
 
 		last := rows[len(rows)-1]
 		lastID = last.ID
-		ts := last.OrderSettlementTime
-		lastSettle = &ts
+		lastSettle = last.OrderSettlementTime
+		hasCursor = true
 
 		if len(rows) < pageSize {
 			break

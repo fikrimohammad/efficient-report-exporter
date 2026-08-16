@@ -3,13 +3,16 @@ package report
 import (
 	"archive/zip"
 	"bufio"
+	"bytes"
+	"compress/flate"
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/djherbis/buffer"
 	"github.com/djherbis/nio/v3"
 
@@ -61,7 +64,8 @@ func (e *reportExporter) asyncFetchReports(
 
 		var (
 			lastReportID            int64
-			lastOrderSettlementTime *time.Time
+			lastOrderSettlementTime time.Time
+			hasCursor               bool
 			limitPerPage            = e.dynamicConfig.Data().QueryLimitPerPage.GetWithDefault(ctx, constant.DefaultQueryLimitPerPage)
 		)
 
@@ -75,6 +79,7 @@ func (e *reportExporter) asyncFetchReports(
 				Limit:                   limitPerPage,
 				LastReportID:            lastReportID,
 				LastOrderSettlementTime: lastOrderSettlementTime,
+				HasCursor:               hasCursor,
 			})
 			if err != nil {
 				reportsDataStreamWriter.CloseWithError(err)
@@ -92,8 +97,8 @@ func (e *reportExporter) asyncFetchReports(
 					return writerErr
 				}
 				lastReportID = r.ID
-				t := r.OrderSettlementTime
-				lastOrderSettlementTime = &t
+				lastOrderSettlementTime = r.OrderSettlementTime
+				hasCursor = true
 			}
 
 			if len(reports) < limitPerPage {
@@ -121,6 +126,10 @@ func (e *reportExporter) asyncBuildReportLine(
 	mainPipeline.Go(func(ctx context.Context) error {
 		defer reportLineWriter.Close()
 
+		// details is reused across reports so the JSON unmarshal amortizes its
+		// backing array instead of allocating a fresh slice per report.
+		var details model.ReportFeeDetails
+
 		for {
 			reportData, err := reportDataStream.Read(ctx)
 			if err != nil {
@@ -131,7 +140,12 @@ func (e *reportExporter) asyncBuildReportLine(
 				return nil
 			}
 
-			for _, reportDetail := range reportData.Details {
+			details = details[:0]
+			if err := sonic.Unmarshal(reportData.Details, &details); err != nil {
+				return err
+			}
+
+			for _, reportDetail := range details {
 				writerError := reportLineWriter.Write(ctx, model.ReportLine{
 					ShopID:              reportData.ShopID,
 					OrderID:             reportData.OrderID,
@@ -164,10 +178,11 @@ func (e *reportExporter) asyncBuildReportCSVFile(
 		defer func() { _ = reportFileWriter.Close() }()
 
 		csvBufSize := e.dynamicConfig.Data().CSVWriteBufSize.GetWithDefault(ctx, constant.DefaultCSVWriteBufSize)
-		reportFileCSVWriter := csv.NewWriter(bufio.NewWriterSize(reportFileWriter, csvBufSize))
-		defer reportFileCSVWriter.Flush()
+		reportFileWriterBuf := bufio.NewWriterSize(reportFileWriter, csvBufSize)
+		defer func() { _ = reportFileWriterBuf.Flush() }()
 
-		if err := reportFileCSVWriter.Write(constant.ReportFileCSVHeaders); err != nil {
+		builder, err := newReportCSVBuilder(reportFileWriterBuf)
+		if err != nil {
 			_ = reportFileWriter.CloseWithError(err)
 			return err
 		}
@@ -183,14 +198,46 @@ func (e *reportExporter) asyncBuildReportCSVFile(
 				return nil
 			}
 
-			if writerError := reportFileCSVWriter.Write(reportLine.ToCSVRow()); writerError != nil {
-				_ = reportFileWriter.CloseWithError(writerError)
-				return writerError
+			if writeErr := builder.appendRow(reportLine); writeErr != nil {
+				_ = reportFileWriter.CloseWithError(writeErr)
+				return writeErr
 			}
 		}
 	})
 
 	return reportFileReader, nil
+}
+
+// compressReportCSVFile deflates the batch's CSV in the calling (batch worker)
+// goroutine, computing the CRC32 and sizes required to write the entry via
+// zip.Writer.CreateRaw. This moves the CPU-bound deflate off the single zip
+// goroutine and onto the parallel batch workers.
+func (e *reportExporter) compressReportCSVFile(name string, csv io.ReadCloser) (model.ReportBatchFile, error) {
+	var buf bytes.Buffer
+	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		return model.ReportBatchFile{}, err
+	}
+
+	h := crc32.NewIEEE()
+	uncompressed, err := io.Copy(io.MultiWriter(fw, h), csv)
+	if err != nil {
+		return model.ReportBatchFile{}, err
+	}
+	if err := fw.Close(); err != nil {
+		return model.ReportBatchFile{}, err
+	}
+	if err := csv.Close(); err != nil {
+		return model.ReportBatchFile{}, err
+	}
+
+	return model.ReportBatchFile{
+		Name:             name,
+		Data:             buf.Bytes(),
+		CRC32:            h.Sum32(),
+		CompressedSize:   uint64(buf.Len()),
+		UncompressedSize: uint64(uncompressed),
+	}, nil
 }
 
 func (e *reportExporter) asyncBuildReportBatchFiles(
@@ -228,7 +275,12 @@ func (e *reportExporter) asyncBuildReportBatchFiles(
 					return csvErr
 				}
 
-				if err := batchFileWriter.Write(ctx, model.ReportBatchFile{Name: b.EntryName(), Reader: csv}); err != nil {
+				compressed, compErr := e.compressReportCSVFile(b.EntryName(), csv)
+				if compErr != nil {
+					return compErr
+				}
+
+				if err := batchFileWriter.Write(ctx, compressed); err != nil {
 					return err
 				}
 
@@ -273,18 +325,22 @@ func (e *reportExporter) asyncZipReportBatchFiles(mainPipeline *errgroup.Group, 
 				return err
 			}
 
-			entry, entryErr := zw.CreateHeader(&zip.FileHeader{Name: batchFile.Name, Method: zip.Deflate})
+			entry, entryErr := zw.CreateRaw(&zip.FileHeader{
+				Name:               batchFile.Name,
+				Method:             zip.Deflate,
+				CRC32:              batchFile.CRC32,
+				CompressedSize64:   batchFile.CompressedSize,
+				UncompressedSize64: batchFile.UncompressedSize,
+			})
 			if entryErr != nil {
 				_ = zipWriter.CloseWithError(entryErr)
 				return entryErr
 			}
 
-			if _, copyErr := io.Copy(entry, batchFile.Reader); copyErr != nil {
-				_ = zipWriter.CloseWithError(copyErr)
-				return copyErr
+			if _, writeErr := entry.Write(batchFile.Data); writeErr != nil {
+				_ = zipWriter.CloseWithError(writeErr)
+				return writeErr
 			}
-
-			_ = batchFile.Reader.Close()
 		}
 	})
 

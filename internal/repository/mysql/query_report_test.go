@@ -72,7 +72,8 @@ func TestBuildReportQuery(t *testing.T) {
 		{
 			name: "cursor pagination",
 			filter: repository.QueryReportFilter{
-				LastOrderSettlementTime: &now,
+				LastOrderSettlementTime: now,
+				HasCursor:               true,
 				LastReportID:            500,
 				Limit:                   100,
 			},
@@ -92,7 +93,8 @@ func TestBuildReportQuery(t *testing.T) {
 				OrderSettlementTimeRange: &repository.QueryReportTimeRange{
 					StartTime: &now,
 				},
-				LastOrderSettlementTime: &now,
+				LastOrderSettlementTime: now,
+				HasCursor:               true,
 				LastReportID:            999,
 				Limit:                   50,
 			},

@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/bytedance/sonic"
 
 	"github.com/fikrimohammad/efficient-report-exporter/internal/config"
 	"github.com/fikrimohammad/efficient-report-exporter/internal/constant"
@@ -38,12 +41,12 @@ import (
 // across [start, end). Rows are produced on demand by QueryReport, never held in
 // memory as a whole, matching the production keyset-pagination read path.
 type benchReportSource struct {
-	shopID  int64
-	n       int
-	start   time.Time
-	end     time.Time
-	step    time.Duration
-	details model.ReportFeeDetails
+	shopID      int64
+	n           int
+	start       time.Time
+	end         time.Time
+	step        time.Duration
+	detailsJSON []byte
 }
 
 // indexFor returns the first row index whose settlement time is >= t.
@@ -68,7 +71,7 @@ func (s *benchReportSource) makeReport(i int) *model.Report {
 		OrderPaymentTime:    ts,
 		OrderSettlementTime: ts,
 		FeeID:               int64(i + 1),
-		Details:             s.details,
+		Details:             bytes.Clone(s.detailsJSON),
 	}
 }
 
@@ -141,7 +144,7 @@ var _ repository.S3 = benchS3{}
 
 func newBenchDynamicLoader(b *testing.B, maxSingleFileRows, maxBatchWorkers int) *confloader.Loader[config.DynamicConfig] {
 	mc := mock.NewConfigClient(map[string]string{
-		"process_export_report/query_limit_per_page":       "1000",
+		"process_export_report/query_limit_per_page":       "2000",
 		"process_export_report/max_time_range_per_batch":   "2h0m0s",
 		"process_export_report/max_batch_pipeline_workers": fmt.Sprintf("%d", maxBatchWorkers),
 		"process_export_report/max_single_file_rows":       fmt.Sprintf("%d", maxSingleFileRows),
@@ -172,16 +175,21 @@ func newBenchExporter(b *testing.B, n, maxSingleFileRows int) (*reportExporter, 
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 
+	detailsJSON, err := sonic.Marshal(model.ReportFeeDetails{
+		{OrderDetailID: 1, CategoryID: 10, ProductID: 100, ProductPriceAmount: 9.99, PromoAmount: 1, FeeBaseAmount: 8.99, FeeFinalAmount: 0.5},
+		{OrderDetailID: 2, CategoryID: 20, ProductID: 200, ProductPriceAmount: 19.99, PromoAmount: 0, FeeBaseAmount: 19.99, FeeFinalAmount: 1.5},
+	})
+	if err != nil {
+		b.Fatalf("marshal bench details: %v", err)
+	}
+
 	src := &benchReportSource{
-		shopID: 100,
-		n:      n,
-		start:  start,
-		end:    end,
-		step:   end.Sub(start) / time.Duration(n),
-		details: model.ReportFeeDetails{
-			{OrderDetailID: 1, CategoryID: 10, ProductID: 100, ProductPriceAmount: 9.99, PromoAmount: 1, FeeBaseAmount: 8.99, FeeFinalAmount: 0.5},
-			{OrderDetailID: 2, CategoryID: 20, ProductID: 200, ProductPriceAmount: 19.99, PromoAmount: 0, FeeBaseAmount: 19.99, FeeFinalAmount: 1.5},
-		},
+		shopID:      100,
+		n:           n,
+		start:       start,
+		end:         end,
+		step:        end.Sub(start) / time.Duration(n),
+		detailsJSON: detailsJSON,
 	}
 
 	mq := mock.NewMockMQ(gomock.NewController(b))
@@ -358,6 +366,27 @@ func BenchmarkPipelinePeakMem(b *testing.B) {
 
 			reportCPU(b, cpuStart, cpuEnd)
 			b.ReportMetric(float64(n)*float64(b.N)/b.Elapsed().Seconds(), "rows_per_sec")
+		})
+	}
+}
+
+// BenchmarkPipelineBatchedPeakMem reports the peak live heap and RSS for the
+// batched path, where each batch worker buffers its compressed CSV in memory
+// before the zip stage assembles it. This captures the memory cost of the
+// parallel-deflate change (a bounded per-batch buffer, not O(rows)).
+func BenchmarkPipelineBatchedPeakMem(b *testing.B) {
+	for _, n := range []int{500_000, 1_000_000} {
+		b.Run(fmt.Sprintf("rows=%d", n), func(b *testing.B) {
+			// maxSingleFileRows=1 forces the batched path at every size.
+			re, start, end := newBenchExporter(b, n, 1)
+			defer func() { _ = re.dynamicConfig.Stop() }()
+
+			b.ReportMetric(float64(n), "rows/op")
+			for i := 0; i < b.N; i++ {
+				p := runPipelinePeakMem(re, start, end)
+				b.ReportMetric(float64(p.heapAlloc), "peak_heapalloc_B/op")
+				b.ReportMetric(float64(p.rss), "peak_rss_B/op")
+			}
 		})
 	}
 }

@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/csv"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -77,15 +79,19 @@ func TestAsyncZipReportBatchFiles_ZipsEntries(t *testing.T) {
 		t.Fatalf("asyncZipReportBatchFiles failed: %v", err)
 	}
 
-	pr1, pw1 := io.Pipe()
-	go func() { _, _ = pw1.Write([]byte("a,b\n1,2\n")); _ = pw1.Close() }()
-	pr2, pw2 := io.Pipe()
-	go func() { _, _ = pw2.Write([]byte("a,b\n3,4\n")); _ = pw2.Close() }()
+	b1, err := re.compressReportCSVFile("batch_1.csv", io.NopCloser(strings.NewReader("a,b\n1,2\n")))
+	if err != nil {
+		t.Fatalf("compress batch 1: %v", err)
+	}
+	b2, err := re.compressReportCSVFile("batch_2.csv", io.NopCloser(strings.NewReader("a,b\n3,4\n")))
+	if err != nil {
+		t.Fatalf("compress batch 2: %v", err)
+	}
 
-	if err := writer.Write(ctx, model.ReportBatchFile{Name: "batch_1.csv", Reader: pr1}); err != nil {
+	if err := writer.Write(ctx, b1); err != nil {
 		t.Fatalf("write batch 1: %v", err)
 	}
-	if err := writer.Write(ctx, model.ReportBatchFile{Name: "batch_2.csv", Reader: pr2}); err != nil {
+	if err := writer.Write(ctx, b2); err != nil {
 		t.Fatalf("write batch 2: %v", err)
 	}
 	writer.Close()
@@ -108,6 +114,23 @@ func TestAsyncZipReportBatchFiles_ZipsEntries(t *testing.T) {
 	}
 	if zr.File[0].Name != "batch_1.csv" || zr.File[1].Name != "batch_2.csv" {
 		t.Fatalf("unexpected entry names: %q, %q", zr.File[0].Name, zr.File[1].Name)
+	}
+
+	// The entries must round-trip through deflate + CreateRaw back to the
+	// original CSV bytes.
+	for i, want := range []string{"a,b\n1,2\n", "a,b\n3,4\n"} {
+		rc, err := zr.File[i].Open()
+		if err != nil {
+			t.Fatalf("open entry %d: %v", i, err)
+		}
+		got, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("read entry %d: %v", i, err)
+		}
+		if string(got) != want {
+			t.Fatalf("entry %d content mismatch: got %q want %q", i, got, want)
+		}
 	}
 }
 
@@ -133,7 +156,7 @@ func TestRunExportReportPipeline_BatchedPathProducesZip(t *testing.T) {
 				ShopID:              100,
 				OrderID:             1,
 				OrderSettlementTime: *filter.OrderSettlementTimeRange.StartTime,
-				Details:             model.ReportFeeDetails{{OrderDetailID: 1, ProductID: 1, FeeFinalAmount: 1.5}},
+				Details:             []byte(`[{"order_detail_id":1,"product_id":1,"fee_final_amount":1.5}]`),
 			}}, nil
 		}).
 		AnyTimes()
@@ -190,5 +213,69 @@ func TestRunExportReportPipeline_BatchedPathProducesZip(t *testing.T) {
 	}
 	if len(zr.File) != 3 {
 		t.Fatalf("expected 3 zip entries, got %d", len(zr.File))
+	}
+}
+
+// TestAsyncBuildReportCSVFile_ReusedRowBufferNoDuplication writes many distinct
+// rows through the CSV stage and verifies the output is exactly header + N rows
+// in order — guarding against the buffer-reuse bug where reusing rowBuf across
+// rows could leak the previous row's bytes into the next one.
+func TestAsyncBuildReportCSVFile_ReusedRowBufferNoDuplication(t *testing.T) {
+	dl := newTestDynamicLoader(t)
+	defer func() { _ = dl.Stop() }()
+
+	re := &reportExporter{dynamicConfig: dl}
+
+	ctx := context.Background()
+	eg := errgroup.New(ctx)
+
+	lineWriter, lineReader := typedpipe.New[model.ReportLine]()
+
+	csvReader, err := re.asyncBuildReportCSVFile(eg, lineReader)
+	if err != nil {
+		t.Fatalf("asyncBuildReportCSVFile: %v", err)
+	}
+
+	const n = 50
+	for i := 0; i < n; i++ {
+		if err := lineWriter.Write(ctx, model.ReportLine{
+			ShopID:  int64(i + 1),
+			FeeID:   int64(i + 1),
+			OrderID: int64(i + 1),
+			ReportFeeDetail: model.ReportFeeDetail{
+				OrderDetailID:  int64(i + 1),
+				ProductID:      int64(i + 1),
+				CategoryID:     int64(i + 1),
+				FeeFinalAmount: float64(i + 1),
+			},
+		}); err != nil {
+			t.Fatalf("write line %d: %v", i, err)
+		}
+	}
+	lineWriter.Close()
+
+	data, err := io.ReadAll(csvReader)
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if err := eg.Wait(); err != nil {
+		t.Fatalf("pipeline error: %v", err)
+	}
+
+	records, err := csv.NewReader(bytes.NewReader(data)).ReadAll()
+	if err != nil {
+		t.Fatalf("parse csv: %v", err)
+	}
+	if len(records) != n+1 {
+		t.Fatalf("expected %d records (header + %d rows), got %d", n+1, n, len(records))
+	}
+	if !strings.EqualFold(records[0][0], "Shop ID") {
+		t.Fatalf("unexpected header first column: %q", records[0][0])
+	}
+	for i, rec := range records[1:] {
+		want := strconv.Itoa(i + 1)
+		if rec[0] != want {
+			t.Fatalf("row %d shop_id = %q, want %q (duplication or ordering bug)", i+1, rec[0], want)
+		}
 	}
 }
