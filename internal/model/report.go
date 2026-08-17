@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -13,16 +12,16 @@ import (
 )
 
 type Report struct {
-	ID                  int64     `db:"id" json:"id"`
-	ShopID              int64     `db:"shop_id" json:"shop_id"`
-	OrderID             int64     `db:"order_id" json:"order_id"`
-	OrderCreationTime   time.Time `db:"order_creation_time" json:"order_creation_time"`
-	OrderPaymentTime    time.Time `db:"order_payment_time" json:"order_payment_time"`
-	OrderSettlementTime time.Time `db:"order_settlement_time" json:"order_settlement_time"`
-	FeeID               int64     `db:"fee_id" json:"fee_id"`
-	Details             []byte    `db:"details" json:"details"`
-	CreationTime        time.Time `db:"creation_time" json:"creation_time"`
-	UpdateTime          time.Time `db:"update_time" json:"update_time"`
+	ID                  int64  `db:"id" json:"id"`
+	ShopID              int64  `db:"shop_id" json:"shop_id"`
+	OrderID             int64  `db:"order_id" json:"order_id"`
+	OrderCreationTime   int64  `db:"order_creation_time" json:"order_creation_time"`
+	OrderPaymentTime    int64  `db:"order_payment_time" json:"order_payment_time"`
+	OrderSettlementTime int64  `db:"order_settlement_time" json:"order_settlement_time"`
+	FeeID               int64  `db:"fee_id" json:"fee_id"`
+	Details             []byte `db:"details" json:"details"`
+	CreationTime        int64  `db:"creation_time" json:"creation_time"`
+	UpdateTime          int64  `db:"update_time" json:"update_time"`
 }
 
 type ReportFeeDetails []ReportFeeDetail
@@ -40,45 +39,11 @@ type ReportFeeDetail struct {
 type ReportLine struct {
 	ShopID              int64
 	OrderID             int64
-	OrderCreationTime   time.Time
-	OrderPaymentTime    time.Time
-	OrderSettlementTime time.Time
+	OrderCreationTime   int64
+	OrderPaymentTime    int64
+	OrderSettlementTime int64
 	FeeID               int64
 	ReportFeeDetail
-}
-
-// MarshalCSV appends rl's 13 CSV columns to dst, comma-separated, and returns
-// the extended buffer. Every column is an integer or a fixed-format timestamp
-// (constant.ReportLineTimeFormat), so none contains a comma, quote, or newline
-// and no CSV quoting is required. Append* formats into the caller's buffer, so
-// a reused buffer makes the row allocation-free.
-func (rl ReportLine) MarshalCSV(dst []byte) []byte {
-	dst = strconv.AppendInt(dst, rl.ShopID, 10)
-	dst = append(dst, ',')
-	dst = strconv.AppendInt(dst, rl.FeeID, 10)
-	dst = append(dst, ',')
-	dst = strconv.AppendInt(dst, rl.OrderID, 10)
-	dst = append(dst, ',')
-	dst = rl.OrderCreationTime.AppendFormat(dst, constant.ReportLineTimeFormat)
-	dst = append(dst, ',')
-	dst = rl.OrderPaymentTime.AppendFormat(dst, constant.ReportLineTimeFormat)
-	dst = append(dst, ',')
-	dst = rl.OrderSettlementTime.AppendFormat(dst, constant.ReportLineTimeFormat)
-	dst = append(dst, ',')
-	dst = strconv.AppendInt(dst, rl.OrderDetailID, 10)
-	dst = append(dst, ',')
-	dst = strconv.AppendInt(dst, rl.ProductID, 10)
-	dst = append(dst, ',')
-	dst = strconv.AppendInt(dst, rl.CategoryID, 10)
-	dst = append(dst, ',')
-	dst = strconv.AppendFloat(dst, rl.ProductPriceAmount, 'f', -1, 64)
-	dst = append(dst, ',')
-	dst = strconv.AppendFloat(dst, rl.PromoAmount, 'f', -1, 64)
-	dst = append(dst, ',')
-	dst = strconv.AppendFloat(dst, rl.FeeBaseAmount, 'f', -1, 64)
-	dst = append(dst, ',')
-	dst = strconv.AppendFloat(dst, rl.FeeFinalAmount, 'f', -1, 64)
-	return dst
 }
 
 // ReportBatch is a fixed time-range slice of a report export, processed as one

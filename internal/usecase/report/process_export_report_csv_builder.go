@@ -2,92 +2,74 @@ package report
 
 import (
 	"bufio"
-	"strings"
-	"unicode"
-	"unicode/utf8"
+	"io"
+	"time"
+
+	zerocsv "github.com/fikrimohammad/go-zerocsv"
 
 	"github.com/fikrimohammad/efficient-report-exporter/internal/constant"
 	"github.com/fikrimohammad/efficient-report-exporter/internal/model"
 )
 
 // reportCSVFileBuilder writes the report export CSV file: a header row written
-// once at construction, then one data row per appendRow call. It wraps the
-// caller's *bufio.Writer and reuses its internal buffer, so the steady-state
-// appendRow loop is allocation-free.
+// once at construction, then one data row per appendRow call. It wraps a
+// *zerocsv.Writer over a caller-sized *bufio.Writer and reuses one []Column
+// row, so the steady-state appendRow loop is allocation-free.
 type reportCSVFileBuilder struct {
-	w   *bufio.Writer
-	buf []byte
+	w   *zerocsv.Writer
+	buf *bufio.Writer
+	row []zerocsv.Column
 }
 
-// newReportCSVBuilder returns a builder writing to buf and writes the report
-// CSV header row to the stream.
-func newReportCSVBuilder(buf *bufio.Writer) (*reportCSVFileBuilder, error) {
-	b := &reportCSVFileBuilder{w: buf}
+// newReportCSVBuilder returns a builder writing to w and writes the report CSV
+// header row to the stream. The builder owns a buffered writer of bufSize bytes
+// and must be flushed via flush before w is closed.
+func newReportCSVBuilder(w io.Writer, bufSize int) (*reportCSVFileBuilder, error) {
+	bw := bufio.NewWriterSize(w, bufSize)
+	b := &reportCSVFileBuilder{
+		w:   zerocsv.NewWriter(bw),
+		buf: bw,
+		row: make([]zerocsv.Column, len(constant.ReportFileCSVHeaders)),
+	}
 	if err := b.writeHeader(); err != nil {
 		return nil, err
 	}
 	return b, nil
 }
 
+// flush pushes any buffered CSV bytes to the underlying writer.
+func (b *reportCSVFileBuilder) flush() error {
+	if err := b.w.Flush(); err != nil {
+		return err
+	}
+	return b.buf.Flush()
+}
+
 // appendRow writes rl as one CSV record followed by a newline.
 func (b *reportCSVFileBuilder) appendRow(rl model.ReportLine) error {
-	b.buf = rl.MarshalCSV(b.buf[:0])
-	b.buf = append(b.buf, '\n')
-	_, err := b.w.Write(b.buf)
-	return err
+	row := b.row
+	row[0] = zerocsv.ColumnInt64(rl.ShopID)
+	row[1] = zerocsv.ColumnInt64(rl.FeeID)
+	row[2] = zerocsv.ColumnInt64(rl.OrderID)
+	row[3] = zerocsv.ColumnTime(time.UnixMilli(rl.OrderCreationTime).UTC(), constant.ReportLineTimeFormat)
+	row[4] = zerocsv.ColumnTime(time.UnixMilli(rl.OrderPaymentTime).UTC(), constant.ReportLineTimeFormat)
+	row[5] = zerocsv.ColumnTime(time.UnixMilli(rl.OrderSettlementTime).UTC(), constant.ReportLineTimeFormat)
+	row[6] = zerocsv.ColumnInt64(rl.OrderDetailID)
+	row[7] = zerocsv.ColumnInt64(rl.ProductID)
+	row[8] = zerocsv.ColumnInt64(rl.CategoryID)
+	row[9] = zerocsv.ColumnFloat64(rl.ProductPriceAmount)
+	row[10] = zerocsv.ColumnFloat64(rl.PromoAmount)
+	row[11] = zerocsv.ColumnFloat64(rl.FeeBaseAmount)
+	row[12] = zerocsv.ColumnFloat64(rl.FeeFinalAmount)
+	return b.w.Write(row...)
 }
 
-// writeHeader writes the report column headers as a quoted CSV record.
+// writeHeader writes the report column headers as one CSV record.
 func (b *reportCSVFileBuilder) writeHeader() error {
-	b.buf = b.appendRecord(b.buf[:0], constant.ReportFileCSVHeaders)
-	b.buf = append(b.buf, '\n')
-	_, err := b.w.Write(b.buf)
-	return err
-}
-
-// appendRecord appends fields to dst as one comma-separated record.
-func (b *reportCSVFileBuilder) appendRecord(dst []byte, fields []string) []byte {
-	for i, f := range fields {
-		if i > 0 {
-			dst = append(dst, ',')
-		}
-		dst = b.appendField(dst, f)
+	headers := constant.ReportFileCSVHeaders
+	row := b.row[:0]
+	for i := range headers {
+		row = append(row, zerocsv.ColumnString(headers[i]))
 	}
-	return dst
-}
-
-// appendField appends field to dst, quoting it when required.
-func (b *reportCSVFileBuilder) appendField(dst []byte, field string) []byte {
-	if !b.fieldNeedsQuotes(field) {
-		return append(dst, field...)
-	}
-
-	dst = append(dst, '"')
-	for i := 0; i < len(field); i++ {
-		if field[i] == '"' {
-			dst = append(dst, '"', '"')
-		} else {
-			dst = append(dst, field[i])
-		}
-	}
-	return append(dst, '"')
-}
-
-// fieldNeedsQuotes mirrors encoding/csv's fieldNeedsQuotes for the default
-// comma separator.
-func (b *reportCSVFileBuilder) fieldNeedsQuotes(field string) bool {
-	if field == "" {
-		return false
-	}
-	if field == `\.` {
-		return true
-	}
-	if strings.ContainsRune(field, ',') {
-		return true
-	}
-	if strings.ContainsAny(field, "\"\r\n") {
-		return true
-	}
-	r1, _ := utf8.DecodeRuneInString(field)
-	return unicode.IsSpace(r1)
+	return b.w.Write(row...)
 }

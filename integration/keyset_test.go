@@ -66,7 +66,7 @@ func TestKeysetPaginationReturnsCorrectRows(t *testing.T) {
 
 		last := rows[len(rows)-1]
 		lastID = last.ID
-		lastSettle = last.OrderSettlementTime
+		lastSettle = time.UnixMilli(last.OrderSettlementTime)
 		hasCursor = true
 
 		if len(rows) < pageSize {
@@ -83,7 +83,7 @@ func TestKeysetPaginationReturnsCorrectRows(t *testing.T) {
 			t.Fatalf("duplicate row id %d", got[i].ID)
 		}
 		seen[got[i].ID] = true
-		if got[i].ID != expected[i].ID || !got[i].OrderSettlementTime.Equal(expected[i].Settle) {
+		if got[i].ID != expected[i].ID || got[i].OrderSettlementTime != expected[i].Settle.UnixMilli() {
 			t.Fatalf("row %d mismatch: got id=%d settle=%v, want id=%d settle=%v",
 				i, got[i].ID, got[i].OrderSettlementTime, expected[i].ID, expected[i].Settle)
 		}
@@ -121,9 +121,9 @@ func seedKeysetRows(t *testing.T, rawDB *sql.DB, shopID int64, start time.Time) 
 
 	for i, settle := range settlements {
 		_, err := rawDB.ExecContext(ctx,
-			`INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			shopID, int64(i+1), settle, settle, settle, int64(i+1), `[]`)
+			`INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details, creation_time, update_time)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			shopID, int64(i+1), settle.UnixMilli(), settle.UnixMilli(), settle.UnixMilli(), int64(i+1), `[]`, settle.UnixMilli(), settle.UnixMilli())
 		if err != nil {
 			t.Fatalf("insert row %d: %v", i, err)
 		}
@@ -136,7 +136,7 @@ func queryOrderedRows(t *testing.T, rawDB *sql.DB, shopID int64, start, end time
 		`SELECT id, order_settlement_time FROM report
 		 WHERE shop_id = ? AND order_settlement_time >= ? AND order_settlement_time < ?
 		 ORDER BY order_settlement_time ASC, id ASC`,
-		shopID, start, end)
+		shopID, start.UnixMilli(), end.UnixMilli())
 	if err != nil {
 		t.Fatalf("query expected rows: %v", err)
 	}
@@ -144,10 +144,14 @@ func queryOrderedRows(t *testing.T, rawDB *sql.DB, shopID int64, start, end time
 
 	var out []orderedRow
 	for rows.Next() {
-		var r orderedRow
-		if err := rows.Scan(&r.ID, &r.Settle); err != nil {
+		var (
+			r        orderedRow
+			settleMs int64
+		)
+		if err := rows.Scan(&r.ID, &settleMs); err != nil {
 			t.Fatalf("scan expected row: %v", err)
 		}
+		r.Settle = time.UnixMilli(settleMs)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {

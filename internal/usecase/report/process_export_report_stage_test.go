@@ -155,7 +155,7 @@ func TestRunExportReportPipeline_BatchedPathProducesZip(t *testing.T) {
 				ID:                  1,
 				ShopID:              100,
 				OrderID:             1,
-				OrderSettlementTime: *filter.OrderSettlementTimeRange.StartTime,
+				OrderSettlementTime: (*filter.OrderSettlementTimeRange.StartTime).UnixMilli(),
 				Details:             []byte(`[{"order_detail_id":1,"product_id":1,"fee_final_amount":1.5}]`),
 			}}, nil
 		}).

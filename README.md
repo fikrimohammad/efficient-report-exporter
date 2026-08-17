@@ -443,7 +443,7 @@ flowchart TB
     Z["zip entry<br/>batch_start_end.csv"]
 
     R -->|"asyncBuildReportLine: flatten details"| L
-    L -->|"asyncBuildReportCSVFile: headers + ToCSVRow"| C
+    L -->|"asyncBuildReportCSVFile: zerocsv headers + rows"| C
     C -->|"batched path only"| F
     F -->|"asyncZipReportBatchFiles"| Z
 ```
