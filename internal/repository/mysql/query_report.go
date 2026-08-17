@@ -77,7 +77,7 @@ func buildReportConditions(filter repository.QueryReportFilter) reportConditions
 
 		if startTime != nil && !startTime.IsZero() {
 			rangeClauses = append(rangeClauses, "order_settlement_time >= :order_settlement_time_start_time")
-			w.args["order_settlement_time_start_time"] = *startTime
+			w.args["order_settlement_time_start_time"] = startTime.UnixMilli()
 		}
 
 		if endTime != nil && !endTime.IsZero() {
@@ -85,7 +85,7 @@ func buildReportConditions(filter repository.QueryReportFilter) reportConditions
 			// both pick up a row whose settlement time falls exactly on the
 			// boundary.
 			rangeClauses = append(rangeClauses, "order_settlement_time < :order_settlement_time_end_time")
-			w.args["order_settlement_time_end_time"] = *endTime
+			w.args["order_settlement_time_end_time"] = endTime.UnixMilli()
 		}
 
 		if len(rangeClauses) > 0 {
@@ -96,7 +96,7 @@ func buildReportConditions(filter repository.QueryReportFilter) reportConditions
 	if filter.HasCursor {
 		w.clauses = append(w.clauses,
 			"(order_settlement_time > :last_order_settlement_time OR (order_settlement_time = :last_order_settlement_time AND id > :last_report_id))")
-		w.args["last_order_settlement_time"] = filter.LastOrderSettlementTime
+		w.args["last_order_settlement_time"] = filter.LastOrderSettlementTime.UnixMilli()
 		w.args["last_report_id"] = filter.LastReportID
 	}
 

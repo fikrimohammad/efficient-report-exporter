@@ -367,7 +367,7 @@ func seedBenchRows(ctx context.Context, rawDB *sql.DB, shopID int64, n int, star
 		if len(placeholders) == 0 {
 			return nil
 		}
-		query := "INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details) VALUES " +
+		query := "INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details, creation_time, update_time) VALUES " +
 			strings.Join(placeholders, ",")
 		if _, err := rawDB.ExecContext(ctx, query, args...); err != nil {
 			return err
@@ -385,8 +385,8 @@ func seedBenchRows(ctx context.Context, rawDB *sql.DB, shopID int64, n int, star
 			`[{"order_detail_id":%d,"category_id":1,"product_id":1,"product_price_amount":9.99,"promo_amount":1,"fee_base_amount":8.99,"fee_final_amount":0.5},{"order_detail_id":%d,"category_id":2,"product_id":2,"product_price_amount":19.99,"promo_amount":0,"fee_base_amount":19.99,"fee_final_amount":1.5},{"order_detail_id":%d,"category_id":3,"product_id":3,"product_price_amount":29.99,"promo_amount":0,"fee_base_amount":29.99,"fee_final_amount":2}]`,
 			i*benchDetailsPerRow+1, i*benchDetailsPerRow+2, i*benchDetailsPerRow+3)
 
-		placeholders = append(placeholders, "(?, ?, ?, ?, ?, ?, ?)")
-		args = append(args, shopID, int64(i+1), create, pay, settle, int64(i+1), details)
+		placeholders = append(placeholders, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+		args = append(args, shopID, int64(i+1), create.UnixMilli(), pay.UnixMilli(), settle.UnixMilli(), int64(i+1), details, settle.UnixMilli(), settle.UnixMilli())
 
 		if len(placeholders) >= batchSize {
 			if err := flush(); err != nil {

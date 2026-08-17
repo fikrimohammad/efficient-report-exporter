@@ -2,7 +2,6 @@ package report
 
 import (
 	"archive/zip"
-	"bufio"
 	"bytes"
 	"compress/flate"
 	"context"
@@ -97,7 +96,7 @@ func (e *reportExporter) asyncFetchReports(
 					return writerErr
 				}
 				lastReportID = r.ID
-				lastOrderSettlementTime = r.OrderSettlementTime
+				lastOrderSettlementTime = time.UnixMilli(r.OrderSettlementTime)
 				hasCursor = true
 			}
 
@@ -178,14 +177,12 @@ func (e *reportExporter) asyncBuildReportCSVFile(
 		defer func() { _ = reportFileWriter.Close() }()
 
 		csvBufSize := e.dynamicConfig.Data().CSVWriteBufSize.GetWithDefault(ctx, constant.DefaultCSVWriteBufSize)
-		reportFileWriterBuf := bufio.NewWriterSize(reportFileWriter, csvBufSize)
-		defer func() { _ = reportFileWriterBuf.Flush() }()
-
-		builder, err := newReportCSVBuilder(reportFileWriterBuf)
+		builder, err := newReportCSVBuilder(reportFileWriter, csvBufSize)
 		if err != nil {
 			_ = reportFileWriter.CloseWithError(err)
 			return err
 		}
+		defer func() { _ = builder.flush() }()
 
 		for {
 			reportLine, err := reportLineDataStream.Read(ctx)

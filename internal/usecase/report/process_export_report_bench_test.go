@@ -62,7 +62,7 @@ func (s *benchReportSource) indexFor(t time.Time) int {
 }
 
 func (s *benchReportSource) makeReport(i int) *model.Report {
-	ts := s.start.Add(time.Duration(i) * s.step)
+	ts := s.start.Add(time.Duration(i) * s.step).UnixMilli()
 	return &model.Report{
 		ID:                  int64(i + 1),
 		ShopID:              s.shopID,

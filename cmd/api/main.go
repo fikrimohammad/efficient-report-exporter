@@ -12,6 +12,8 @@ import (
 )
 
 func main() {
+	defer app.StartPprofServer()()
+
 	resource, err := app.NewResource()
 	if err != nil {
 		log.Fatalf("failed to initialize resources: %v", err)

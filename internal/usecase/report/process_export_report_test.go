@@ -35,17 +35,17 @@ func TestProcessExportReport_FullPipelineSuccess(t *testing.T) {
 	reports := []*model.Report{
 		{
 			ID: 1, ShopID: 100, OrderID: 1,
-			OrderCreationTime:   time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC),
-			OrderPaymentTime:    time.Date(2025, 1, 1, 11, 0, 0, 0, time.UTC),
-			OrderSettlementTime: time.Date(2025, 1, 2, 12, 0, 0, 0, time.UTC),
+			OrderCreationTime:   time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC).UnixMilli(),
+			OrderPaymentTime:    time.Date(2025, 1, 1, 11, 0, 0, 0, time.UTC).UnixMilli(),
+			OrderSettlementTime: time.Date(2025, 1, 2, 12, 0, 0, 0, time.UTC).UnixMilli(),
 			FeeID:               10,
 			Details:             []byte(`[{"order_detail_id":1,"category_id":100,"product_id":1000,"product_price_amount":10.5,"promo_amount":1,"fee_base_amount":9.5,"fee_final_amount":9},{"order_detail_id":2,"category_id":200,"product_id":2000,"product_price_amount":20,"promo_amount":2,"fee_base_amount":18,"fee_final_amount":17}]`),
 		},
 		{
 			ID: 2, ShopID: 100, OrderID: 2,
-			OrderCreationTime:   time.Date(2025, 1, 1, 14, 0, 0, 0, time.UTC),
-			OrderPaymentTime:    time.Date(2025, 1, 1, 15, 0, 0, 0, time.UTC),
-			OrderSettlementTime: time.Date(2025, 1, 2, 16, 0, 0, 0, time.UTC),
+			OrderCreationTime:   time.Date(2025, 1, 1, 14, 0, 0, 0, time.UTC).UnixMilli(),
+			OrderPaymentTime:    time.Date(2025, 1, 1, 15, 0, 0, 0, time.UTC).UnixMilli(),
+			OrderSettlementTime: time.Date(2025, 1, 2, 16, 0, 0, 0, time.UTC).UnixMilli(),
 			FeeID:               11,
 			Details:             []byte(`[{"order_detail_id":3,"category_id":300,"product_id":3000,"product_price_amount":30,"promo_amount":3,"fee_base_amount":27,"fee_final_amount":26}]`),
 		},
@@ -408,7 +408,7 @@ func TestAsyncBuildReportLine_FlattensDetails(t *testing.T) {
 
 	err = reportWriter.Write(ctx, model.Report{
 		ID: 1, ShopID: 100, OrderID: 1001, FeeID: 10,
-		OrderSettlementTime: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC),
+		OrderSettlementTime: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC).UnixMilli(),
 		Details:             []byte(`[{"order_detail_id":1,"product_id":1,"fee_final_amount":10},{"order_detail_id":2,"product_id":2,"fee_final_amount":20}]`),
 	})
 	if err != nil {
@@ -465,7 +465,7 @@ func TestAsyncBuildReportCSVFile_WritesHeadersAndRows(t *testing.T) {
 
 	_ = lineWriter.Write(ctx, model.ReportLine{
 		ShopID: 100, OrderID: 1001, FeeID: 10,
-		OrderSettlementTime: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC),
+		OrderSettlementTime: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC).UnixMilli(),
 		ReportFeeDetail: model.ReportFeeDetail{
 			OrderDetailID: 1, ProductID: 100, FeeFinalAmount: 15.5,
 		},

@@ -159,8 +159,8 @@ func seedReports(db *sql.DB) {
 				log.Fatalf("failed to marshal details: %v", err)
 			}
 
-			batch = append(batch, "(?, ?, ?, ?, ?, ?, ?)")
-			args = append(args, shopID, orderBase+int64(o)+1, orderCreationTime, orderPaymentTime, orderSettlementTime, nextFeeID, string(detailsJSON))
+			batch = append(batch, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			args = append(args, shopID, orderBase+int64(o)+1, orderCreationTime.UnixMilli(), orderPaymentTime.UnixMilli(), orderSettlementTime.UnixMilli(), nextFeeID, string(detailsJSON), now.UnixMilli(), now.UnixMilli())
 			nextFeeID++
 
 			if len(batch) >= batchSize {
@@ -186,7 +186,7 @@ func seedReports(db *sql.DB) {
 }
 
 func insertReportBatch(tx *sql.Tx, placeholders []string, args []any) {
-	query := "INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details) VALUES "
+	query := "INSERT INTO report (shop_id, order_id, order_creation_time, order_payment_time, order_settlement_time, fee_id, details, creation_time, update_time) VALUES "
 	query += joinPlaceholders(placeholders)
 	if _, err := tx.Exec(query, args...); err != nil {
 		log.Fatalf("failed to insert report batch: %v", err)
